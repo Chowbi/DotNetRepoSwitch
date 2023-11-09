@@ -49,7 +49,7 @@ public static class SlnParser
                 string[] parts = line.Split('(');
                 switch (parts[0].Trim())
                 {
-                    case nameof(Global): break;
+                    case "Global": break;
                     case nameof(Project):
                         parts = parts[1].Split(_Splits, _SplitOptions);
                         Project project = new()
@@ -57,6 +57,7 @@ public static class SlnParser
                             FilePath = parts[2],
                             AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2]),
                             Name = parts[1],
+                            OriginalName = parts[1],
                             ProjectGuid = parts[3],
                             ProjectTypeGuid = parts[0]
                         };

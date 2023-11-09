@@ -1,6 +1,9 @@
-﻿using System.Xml;
+﻿using System.Collections;
+using System.Xml;
 
 namespace SlnTools;
+
+using static SlnHelpers;
 
 public class SolutionConfiguration
 {
@@ -68,6 +71,7 @@ public class Project
 {
     public string ProjectTypeGuid { get; set; } = null!;
     public string Name { get; set; } = null!;
+    public string OriginalName { get; set; } = null!;
     public string FilePath { get; set; } = null!;
 
     public string AbsoluteFilePath { get; set; } = null!;
@@ -77,16 +81,120 @@ public class Project
 
     public XmlDocument? ProjectFile { get; set; }
 
-    public List<XmlNode> ProjectReferences { get; } = new();
-    public List<XmlNode> PackageReferences { get; } = new();
+    public ProjectReferences ProjectReferences { get; } = new();
+    public PackageReferences PackageReferences { get; } = new();
+
+    public bool NeedProjectReferenceCheck => ProjectReferences.Any() || PackageReferences.Any();
     public override string ToString() => $"{Name} ({FilePath})";
 }
 
-public class Projects : List<Project>
+public enum ReferenceType
 {
+    Package,
+    Project
 }
 
-public class Global
+public interface IReference
+{
+    public ReferenceType ReferenceType { get; }
+    public string Name { get; }
+    public XmlNode XmlNode { get; }
+}
+
+public class ReferenceComparer : IEqualityComparer<IReference>
+{
+    public bool Equals(IReference? x, IReference? y) => x?.Name.Equals(y?.Name) ?? y?.Name.Equals(x?.Name) ?? false;
+    public int GetHashCode(IReference obj) => obj.Name.GetHashCode();
+}
+
+public abstract class ReferenceList<T> : IEnumerable<T> where T : IReference
+{
+    protected HashSet<T> _List = new((IEqualityComparer<T>)new ReferenceComparer());
+    public XmlNode? RootNode { get; private set; }
+    public int Count => RootNode?.ChildNodes.Count ?? 0;
+    protected abstract T GetT(XmlNode node);
+
+    public bool Add(XmlNode node)
+    {
+        bool result = _List.Add(GetT(node));
+        if (!result)
+            return result;
+
+        if (RootNode == null)
+            RootNode = node.ParentNode;
+        else if (RootNode != node.ParentNode)
+        {
+            node.ParentNode!.RemoveChild(node);
+            RootNode.AppendChild(node);
+        }
+
+        if (RootNode is not { Name: ItemGroup })
+            throw new Exception("Should not happen");
+
+        return result;
+    }
+
+    public void AddRange(IEnumerable<XmlNode> projectNodes)
+    {
+        foreach (XmlNode node in projectNodes)
+            Add(node);
+    }
+
+    public bool Remove(T item)
+    {
+        RootNode!.RemoveChild(item.XmlNode);
+        return _List.Remove(item);
+    }
+
+    public IEnumerator<T> GetEnumerator() => _List.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)_List).GetEnumerator();
+}
+
+public class ProjectReference : IReference
+{
+    public ReferenceType ReferenceType => ReferenceType.Project;
+    public string Name { get; }
+    public string CsprojPath { get; }
+    public XmlNode XmlNode { get; }
+
+    public ProjectReference(XmlNode projectNode)
+    {
+        CsprojPath = projectNode.Attributes![SlnHelpers.IncludeAttribute]!.InnerText;
+        Name = Path.GetFileNameWithoutExtension(CsprojPath);
+        XmlNode = projectNode;
+    }
+
+    public override string ToString() => Name;
+}
+
+public class ProjectReferences : ReferenceList<ProjectReference>
+{
+    protected override ProjectReference GetT(XmlNode node) => new(node);
+}
+
+public class PackageReference : IReference
+{
+    public ReferenceType ReferenceType => ReferenceType.Package;
+    public string Name { get; }
+    public string Version { get; }
+    public XmlNode XmlNode { get; }
+
+    public PackageReference(XmlNode projectNode)
+    {
+        Name = projectNode.Attributes![SlnHelpers.IncludeAttribute]!.InnerText;
+        Version = projectNode.Attributes!["Version"]!.InnerText;
+        XmlNode = projectNode;
+    }
+
+    public override string ToString() => Name;
+}
+
+public class PackageReferences : ReferenceList<PackageReference>
+{
+    protected override PackageReference GetT(XmlNode node) => new(node);
+}
+
+public class Projects : List<Project>
 {
 }
 

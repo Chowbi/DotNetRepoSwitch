@@ -8,6 +8,7 @@ public static class SlnHelpers
     public const string PackageReference = "PackageReference";
     public const string ProjectReference = "ProjectReference";
     public const string IncludeAttribute = "Include";
+    public const string ItemGroup = "ItemGroup";
     
     
     public static IEnumerable<XmlNode> RetrieveNodes(this XmlNode root, string nodeName)

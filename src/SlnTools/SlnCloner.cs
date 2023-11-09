@@ -30,6 +30,7 @@ public static class SlnCloner
             AbsoluteFilePath = project.AbsoluteFilePath,
             AbsoluteOriginalDirectory = project.AbsoluteOriginalDirectory,
             Name = project.Name,
+            OriginalName = project.OriginalName,
             ProjectGuid = project.ProjectGuid,
             ProjectTypeGuid = project.ProjectTypeGuid
         };
