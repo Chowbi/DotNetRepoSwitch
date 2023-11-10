@@ -83,8 +83,6 @@ public class Project
 
     public ProjectReferences ProjectReferences { get; } = new();
     public PackageReferences PackageReferences { get; } = new();
-
-    public bool NeedProjectReferenceCheck => ProjectReferences.Any() || PackageReferences.Any();
     public override string ToString() => $"{Name} ({FilePath})";
 }
 

@@ -16,14 +16,14 @@ public static class SlnMerger
         if (toMerge.Length == 0)
             return mainSln;
 
+        Console.Write($"Merging {toMerge.Length + 1} sln files. ");
         SolutionConfiguration result = MergeSolutionAndLinkFiles(mainSln, toMerge);
+        Console.WriteLine("Done");
 
+        Console.Write("Replacing Packages by projects, adding dependant projects. ");
         foreach (Project project in result.Projects)
-            if (project.NeedProjectReferenceCheck)
+            if (project.ProjectFile != null)
             {
-                if (project.ProjectFile == null)
-                    throw new Exception("Should not happen.");
-                
                 XmlNode? refParent = project.ProjectReferences.RootNode;
                 if (refParent == null)
                     refParent = project.ProjectFile.CreateNode(XmlNodeType.Element, ItemGroup, null);
@@ -40,12 +40,14 @@ public static class SlnMerger
                 AddProjectReferences(result, project, project, refParent);
             }
 
+        Console.WriteLine("Done");
+
+        Console.Write("Cleaning packages. ");
         foreach (Project project in result.Projects)
-        {
-            foreach (PackageReference package in project.PackageReferences.ToList())
-                if (result.Projects.Any(p => p.OriginalName == package.Name))
-                    project.PackageReferences.Remove(package);
-        }
+        foreach (PackageReference package in project.PackageReferences.ToList())
+            if (result.Projects.Any(p => p.OriginalName == package.Name))
+                project.PackageReferences.Remove(package);
+        Console.WriteLine("Done");
 
         return result;
     }
@@ -107,7 +109,8 @@ public static class SlnMerger
 
                     bool isConfSection = section.Name switch
                     {
-                        "SolutionConfigurationPlatforms" or "ProjectConfigurationPlatforms" => false,
+                        "SolutionConfigurationPlatforms" or "ProjectConfigurationPlatforms"
+                            or "NestedProjects" => false,
                         "SolutionProperties" => true,
                         _ => throw new NotImplementedException()
                     };
@@ -153,7 +156,7 @@ public static class SlnMerger
     {
         if (rootProject.ProjectFile == null)
             throw new Exception("Should not happen");
-        
+
         Project? proj = result.Projects.SingleOrDefault(p => p.Name == reference.Name);
         if (proj == null)
             return;
@@ -247,8 +250,21 @@ public static class SlnMerger
     }
 
 
-    public static void WriteTo(string slnFilePath, SolutionConfiguration conf)
+    public static void WriteTo(string slnFilePath, SolutionConfiguration conf
+        , params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
     {
+        Dictionary<string, string> fileToCopySourceDic;
+        try
+        {
+            fileToCopySourceDic =
+                fileToCopySource.ToDictionary(c => c.fileToCopyName, c => c.absolutePathToSource);
+        }
+        catch (Exception e)
+        {
+            throw new Exception("fileToCopySource must not contains fileToCopyName duplicates.", e);
+        }
+
+        Console.Write("Writing result sln file and projects. ");
         string baseDirectoryPath = Path.GetDirectoryName(slnFilePath) ?? throw new NullReferenceException();
         if (!Directory.Exists(baseDirectoryPath))
             Directory.CreateDirectory(baseDirectoryPath);
@@ -266,9 +282,25 @@ public static class SlnMerger
                 using XmlWriter xmlWriter = XmlWriter.Create(file, settings);
                 project.ProjectFile.WriteTo(xmlWriter);
                 foreach (string toCopy in GetToCopy(project.ProjectFile, ""))
-                    File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), Path.Combine(directory, toCopy),
-                        true);
+                {
+                    string destination = Path.Combine(directory, toCopy);
+                    string toCopyName = Path.GetFileName(destination);
+                    if (fileToCopySourceDic.TryGetValue(toCopyName, out string? source))
+                    {
+                        if (File.Exists(destination))
+                            File.Copy(destination,
+                                destination + $"{DateTime.Now:yyyyMMdd_HHmmss}.back");
+                        File.Copy(source, destination, true);
+                    }
+                    else if (File.Exists(destination))
+                        File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy),
+                            destination + $"{DateTime.Now:yyyyMMdd_HHmmss}.source");
+                    else
+                        File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination);
+                }
             }
+
+        Console.WriteLine("Done");
     }
 
     private static HashSet<string> GetToCopy(XmlDocument xmlDoc, string prefix)
