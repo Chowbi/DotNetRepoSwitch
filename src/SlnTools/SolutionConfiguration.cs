@@ -83,6 +83,7 @@ public class Project
 
     public ProjectReferences ProjectReferences { get; } = new();
     public PackageReferences PackageReferences { get; } = new();
+    public List<string> SlnLines { get; } = new();
     public override string ToString() => $"{Name} ({FilePath})";
 }
 
@@ -96,6 +97,7 @@ public interface IReference
 {
     public ReferenceType ReferenceType { get; }
     public string Name { get; }
+    public string AttributeName { get; }
     public XmlNode XmlNode { get; }
 }
 
@@ -152,12 +154,15 @@ public class ProjectReference : IReference
 {
     public ReferenceType ReferenceType => ReferenceType.Project;
     public string Name { get; }
+    public string AttributeName { get; }
     public string CsprojPath { get; }
     public XmlNode XmlNode { get; }
 
     public ProjectReference(XmlNode projectNode)
     {
-        CsprojPath = projectNode.Attributes![SlnHelpers.IncludeAttribute]!.InnerText;
+        (Name, AttributeName) = GetNameAndAttribute(projectNode);
+        CsprojPath = projectNode.Attributes![IncludeAttribute]!.InnerText;
+        AttributeName = IncludeAttribute;
         Name = Path.GetFileNameWithoutExtension(CsprojPath);
         XmlNode = projectNode;
     }
@@ -174,14 +179,15 @@ public class PackageReference : IReference
 {
     public ReferenceType ReferenceType => ReferenceType.Package;
     public string Name { get; }
-    public string Version { get; }
+    public string AttributeName { get; }
+    public string? Version { get; }
     public XmlNode XmlNode { get; }
 
-    public PackageReference(XmlNode projectNode)
+    public PackageReference(XmlNode packageNode)
     {
-        Name = projectNode.Attributes![SlnHelpers.IncludeAttribute]!.InnerText;
-        Version = projectNode.Attributes!["Version"]!.InnerText;
-        XmlNode = projectNode;
+        (Name, AttributeName) = GetNameAndAttribute(packageNode);
+        Version = packageNode.Attributes!["Version"]?.InnerText;
+        XmlNode = packageNode;
     }
 
     public override string ToString() => Name;

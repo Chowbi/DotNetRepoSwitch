@@ -41,9 +41,12 @@ public static class SlnParser
             }
 
         Section? currentSection = null;
+        Project? currentProject = null;
         foreach (string line in content.Skip(maxHeaderLine + 1))
-            if (line.StartsWith("\tEnd") || line.StartsWith("End") || line == "")
+            if (line.StartsWith("\tEndGlobalSection") || line.StartsWith("EndGlobal") || line == "")
                 currentSection = null;
+            else if (line.Contains("EndProject"))
+                currentProject = null;
             else
             {
                 string[] parts = line.Split('(');
@@ -52,7 +55,7 @@ public static class SlnParser
                     case "Global": break;
                     case nameof(Project):
                         parts = parts[1].Split(_Splits, _SplitOptions);
-                        Project project = new()
+                        currentProject = new()
                         {
                             FilePath = parts[2],
                             AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2]),
@@ -61,20 +64,21 @@ public static class SlnParser
                             ProjectGuid = parts[3],
                             ProjectTypeGuid = parts[0]
                         };
-                        project.AbsoluteOriginalDirectory = Path.GetDirectoryName(project.AbsoluteFilePath)
-                                                            ?? throw new NullReferenceException();
-                        if (project.FilePath.EndsWith(SlnHelpers.CsProjExtension))
+                        currentProject.AbsoluteOriginalDirectory =
+                            Path.GetDirectoryName(currentProject.AbsoluteFilePath)
+                            ?? throw new NullReferenceException();
+                        if (currentProject.FilePath.EndsWith(SlnHelpers.CsProjExtension))
                         {
-                            project.ProjectFile = new XmlDocument();
-                            project.ProjectFile.Load(
-                                Path.Combine(result.SlnDirectory, project.FilePath));
-                            project.PackageReferences.AddRange(
-                                project.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
-                            project.ProjectReferences.AddRange(
-                                project.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
+                            currentProject.ProjectFile = new XmlDocument();
+                            currentProject.ProjectFile.Load(
+                                Path.Combine(result.SlnDirectory, currentProject.FilePath));
+                            currentProject.PackageReferences.AddRange(
+                                currentProject.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
+                            currentProject.ProjectReferences.AddRange(
+                                currentProject.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
                         }
 
-                        result.Projects.Add(project);
+                        result.Projects.Add(currentProject);
                         break;
                     case "GlobalSection":
                         parts = parts[1].Split(_Splits, _SplitOptions);
@@ -94,9 +98,12 @@ public static class SlnParser
                         result.Sections.Add(currentSection);
                         break;
                     default:
-                        if (currentSection == null || line != "\tEndGlobalSection" && !line.StartsWith("\t\t"))
+                        if (currentProject != null)
+                            currentProject.SlnLines.Add(line);
+                        else if (currentSection != null)
+                            currentSection.Lines.Add(line);
+                        else
                             throw new Exception("Should not happen");
-                        currentSection.Lines.Add(line);
                         break;
                 }
             }
@@ -114,10 +121,15 @@ public static class SlnParser
         TryAdd(content, keys[3], sln.VsMinimalVersionStr);
 
         foreach (Project p in sln.Projects)
+        {
             content.Add($$"""
                           Project("{{{p.ProjectTypeGuid}}}") = "{{p.Name}}", "{{p.FilePath}}", "{{{p.ProjectGuid}}}"
-                          EndProject
                           """);
+            foreach (string slnLine in p.SlnLines)
+                content.Add(slnLine);
+            content.Add("EndProject");
+        }
+
         content.Add("Global");
         foreach (Section s in sln.Sections)
         {

@@ -8,9 +8,10 @@ public static class SlnHelpers
     public const string PackageReference = "PackageReference";
     public const string ProjectReference = "ProjectReference";
     public const string IncludeAttribute = "Include";
+    public const string RemoveAttribute = "Remove";
     public const string ItemGroup = "ItemGroup";
-    
-    
+
+
     public static IEnumerable<XmlNode> RetrieveNodes(this XmlNode root, string nodeName)
     {
         foreach (XmlNode node in root.ChildNodes)
@@ -37,5 +38,19 @@ public static class SlnHelpers
                         yield return value;
                 }
         }
+    }
+
+    public static (string Name, string AttributeName) GetNameAndAttribute(XmlNode node)
+    {
+        if (node.Attributes == null)
+            throw new NullReferenceException(nameof(node.Attributes));
+        else if (node.Attributes[IncludeAttribute] != null && node.Attributes[RemoveAttribute] != null)
+            throw new Exception($"It is not expected to have both {IncludeAttribute} and {RemoveAttribute}.");
+        else if (node.Attributes[IncludeAttribute] != null)
+            return (node.Attributes[IncludeAttribute]!.Value, IncludeAttribute);
+        else if (node.Attributes[RemoveAttribute] != null)
+            return (node.Attributes[RemoveAttribute]!.Value, RemoveAttribute);
+        else
+            throw new Exception($"{IncludeAttribute} nor {RemoveAttribute} was found.");
     }
 }

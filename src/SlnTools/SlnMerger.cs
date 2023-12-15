@@ -110,7 +110,7 @@ public static class SlnMerger
                     bool isConfSection = section.Name switch
                     {
                         "SolutionConfigurationPlatforms" or "ProjectConfigurationPlatforms"
-                            or "NestedProjects" => false,
+                            or "NestedProjects" or "MonoDevelopProperties" or "ExtensibilityGlobals" => false,
                         "SolutionProperties" => true,
                         _ => throw new NotImplementedException()
                     };
@@ -161,8 +161,7 @@ public static class SlnMerger
         if (proj == null)
             return;
 
-        XmlNode newNode =
-            rootProject.ProjectFile.CreateNode(XmlNodeType.Element, SlnHelpers.ProjectReference, null);
+        XmlNode newNode = rootProject.ProjectFile.CreateNode(XmlNodeType.Element, SlnHelpers.ProjectReference, null);
         XmlAttribute attr = rootProject.ProjectFile.CreateAttribute(IncludeAttribute);
         for (int i = 0; i < rootProject.FilePath.Count(c => c is '\\' or '/'); i++)
             attr.Value += "..\\";
