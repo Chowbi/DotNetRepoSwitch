@@ -278,8 +278,27 @@ public static class SlnMerger
                 string directory = Path.GetDirectoryName(file)!;
                 if (!Directory.Exists(directory))
                     Directory.CreateDirectory(directory);
-                using XmlWriter xmlWriter = XmlWriter.Create(file, settings);
+
+
+                string[] origPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
+                string[] newPathParts = directory.Split(Path.DirectorySeparatorChar);
+                string commonPath = "", relPath = "";
+                for (int i = 0; i < origPathParts.Length; i++)
+                    if (string.IsNullOrWhiteSpace(relPath) && origPathParts[i] == newPathParts[i])
+                        commonPath += origPathParts[i] + Path.DirectorySeparatorChar;
+                    else
+                        relPath += string.IsNullOrWhiteSpace(origPathParts[i])
+                            ? ""
+                            : ".." + Path.DirectorySeparatorChar;
+
+
+                StringBuilder sb = new();
+                using XmlWriter xmlWriter = XmlWriter.Create(sb, settings);
                 project.ProjectFile.WriteTo(xmlWriter);
+                xmlWriter.Flush();
+                string xml = sb.ToString();
+                string toWrite = xml.Replace(commonPath, relPath);
+                File.WriteAllText(file, toWrite, Encoding.UTF8);
                 foreach (string toCopy in GetToCopy(project.ProjectFile, ""))
                 {
                     string destination = Path.Combine(directory, toCopy);
