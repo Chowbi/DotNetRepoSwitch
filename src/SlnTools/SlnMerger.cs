@@ -314,7 +314,14 @@ public static class SlnMerger
                         File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy),
                             destination + $"{DateTime.Now:yyyyMMdd_HHmmss}.source");
                     else
+                    {
+                        string destDir = Path.GetDirectoryName(destination)
+                                           ?? throw new NullReferenceException(
+                                               "Destination should have a parent directory");
+                        if (!Directory.Exists(destDir))
+                            Directory.CreateDirectory(destDir);
                         File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination);
+                    }
                 }
             }
 
