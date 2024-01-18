@@ -248,48 +248,68 @@ public static class SlnMerger
             }
     }
 
-
-    public static void WriteTo(string slnFilePath, SolutionConfiguration conf
-        , params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
+    public static void WriteTo(string slnFilePath,
+        SolutionConfiguration conf,
+        bool copySlnFolderFiles,
+        params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
     {
         Dictionary<string, string> fileToCopySourceDic;
         try
         {
-            fileToCopySourceDic =
-                fileToCopySource.ToDictionary(c => c.fileToCopyName, c => c.absolutePathToSource);
+            fileToCopySourceDic = fileToCopySource.ToDictionary(c => c.fileToCopyName, c => c.absolutePathToSource);
         }
         catch (Exception e)
         {
             throw new Exception("fileToCopySource must not contains fileToCopyName duplicates.", e);
         }
 
-        Console.Write("Writing result sln file and projects. ");
+        Console.WriteLine("Writing result sln file and projects. ");
         string baseDirectoryPath = Path.GetDirectoryName(slnFilePath) ?? throw new NullReferenceException();
         if (!Directory.Exists(baseDirectoryPath))
             Directory.CreateDirectory(baseDirectoryPath);
 
         SlnParser.WriteConfiguration(conf, slnFilePath);
 
-        XmlWriterSettings settings = new() { Indent = true, Encoding = Encoding.UTF8 };
+        if (copySlnFolderFiles)
+        {
+            Console.WriteLine("Copying solution directory files");
+            string originalRootName = Path.GetFileNameWithoutExtension(conf.SlnFile);
+            string newRootName = Path.GetFileNameWithoutExtension(slnFilePath);
+            foreach (string file in Directory.EnumerateFiles(conf.SlnDirectory))
+                if (file != conf.SlnFile)
+                {
+                    string fileName = Path.GetFileName(file).Replace(originalRootName, newRootName);
+                    Console.Write($"{fileName} ");
+                    string dest = Path.Combine(baseDirectoryPath, fileName);
+                    CopyWithBackup(file, dest, false);
+                }
+
+            Console.WriteLine();
+        }
+
+        XmlWriterSettings settings = new()
+        {
+            Indent = true, Encoding = Encoding.UTF8
+        };
+        Console.WriteLine("Merging projects");
         foreach (Project project in conf.Projects)
             if (project.ProjectFile != null)
             {
                 string file = Path.Combine(baseDirectoryPath, project.FilePath.TrimStart('.', '\\', '/'));
-                string directory = Path.GetDirectoryName(file)!;
-                if (!Directory.Exists(directory))
-                    Directory.CreateDirectory(directory);
+                string projectDirectory = Path.GetDirectoryName(file)!;
+                if (!Directory.Exists(projectDirectory))
+                    Directory.CreateDirectory(projectDirectory);
 
+                Console.Write(project.Name + ' ');
 
                 string[] origPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
-                string[] newPathParts = directory.Split(Path.DirectorySeparatorChar);
+                string[] newPathParts = projectDirectory.Split(Path.DirectorySeparatorChar);
                 string commonPath = "", relPath = "";
                 for (int i = 0; i < origPathParts.Length; i++)
                     if (string.IsNullOrWhiteSpace(relPath) && origPathParts[i] == newPathParts[i])
                         commonPath += origPathParts[i] + Path.DirectorySeparatorChar;
                     else
-                        relPath += string.IsNullOrWhiteSpace(origPathParts[i])
-                            ? ""
-                            : ".." + Path.DirectorySeparatorChar;
+                        relPath += string.IsNullOrWhiteSpace(origPathParts[i]) ? "" : ".." + Path.DirectorySeparatorChar;
 
 
                 StringBuilder sb = new();
@@ -301,38 +321,71 @@ public static class SlnMerger
                 File.WriteAllText(file, toWrite, Encoding.UTF8);
                 foreach (string toCopy in GetToCopy(project.ProjectFile, ""))
                 {
-                    string destination = Path.Combine(directory, toCopy);
-                    string toCopyName = Path.GetFileName(destination);
-                    if (fileToCopySourceDic.TryGetValue(toCopyName, out string? source))
-                    {
-                        if (File.Exists(destination))
-                            File.Copy(destination,
-                                destination + $"{DateTime.Now:yyyyMMdd_HHmmss}.back");
-                        File.Copy(source, destination, true);
-                    }
-                    else if (File.Exists(destination))
-                        File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy),
-                            destination + $"{DateTime.Now:yyyyMMdd_HHmmss}.source");
+                    string destination = Path.Combine(projectDirectory, toCopy);
+                    if (fileToCopySourceDic.TryGetValue(Path.GetFileName(destination), out string? source))
+                        CopyWithBackup(source, destination, true);
                     else
-                    {
-                        string destDir = Path.GetDirectoryName(destination)
-                                           ?? throw new NullReferenceException(
-                                               "Destination should have a parent directory");
-                        if (!Directory.Exists(destDir))
-                            Directory.CreateDirectory(destDir);
-                        File.Copy(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination);
-                    }
+                        CopyWithBackup(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination, false);
                 }
             }
 
+        Console.WriteLine();
         Console.WriteLine("Done");
     }
 
-    private static HashSet<string> GetToCopy(XmlDocument xmlDoc, string prefix)
+    private static void CopyWithBackup(string origin, string destination, bool replaceDestination)
     {
-        HashSet<XmlNode> toCopyNodes = new(xmlDoc.RetrieveNodes("CopyToOutputDirectory"));
-        HashSet<string> toCopy = new(toCopyNodes
-            .Select(n => prefix + n.ParentNode?.Attributes?["Update"]?.Value).Where(n => n != prefix && n != "Never"));
-        return toCopy;
+        string destDir = Path.GetDirectoryName(destination) ?? throw new NullReferenceException($"{destination} has no root directory");
+        if (!File.Exists(destination))
+        {
+            if (!Directory.Exists(destDir))
+                Directory.CreateDirectory(destDir);
+            File.Copy(origin, destination);
+            return;
+        }
+
+        byte[] sourceContent = File.ReadAllBytes(origin);
+        if (IsSameContent(sourceContent, destination))
+            return;
+
+        byte[] toCompareContent = replaceDestination ? File.ReadAllBytes(destination) : sourceContent;
+        string fileName = Path.GetFileNameWithoutExtension(destination) + '*';
+        bool copied = false;
+        foreach (string exists in Directory.EnumerateFiles(destDir, fileName))
+            if (exists != destination && IsSameContent(toCompareContent, exists))
+            {
+                copied = true;
+                break;
+            }
+
+        if (replaceDestination)
+        {
+            if (!copied)
+                File.Copy(destination, destination + $"_{DateTime.Now:yyyyMMdd_HHmmss}.back");
+            File.Copy(origin, destination, true);
+        }
+        else if (!copied)
+            File.Copy(origin, destination + $"_{DateTime.Now:yyyyMMdd_HHmmss}.source");
+    }
+
+    private static bool IsSameContent(byte[] original, string toTest)
+    {
+        byte[] toTestContent = File.ReadAllBytes(toTest);
+        if (original.Length != toTestContent.Length)
+            return false;
+        for (int i = 0; i < original.Length; i++)
+            if (original[i] != toTestContent[i])
+                return false;
+        return true;
+    }
+
+    private static IEnumerable<string> GetToCopy(XmlDocument xmlDoc, string prefix)
+    {
+        foreach (XmlNode node in xmlDoc.RetrieveNodes("CopyToOutputDirectory"))
+        {
+            string toCopy = prefix + node.ParentNode?.Attributes?["Update"]?.Value;
+            if (toCopy != prefix && toCopy != "Never")
+                yield return toCopy;
+        }
     }
 }
