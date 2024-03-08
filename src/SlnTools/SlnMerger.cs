@@ -7,9 +7,8 @@ using static SlnHelpers;
 
 public static class SlnMerger
 {
-    public static SolutionConfiguration Merge(string mainSlnPath, params string[] toMergePaths)
-        => Merge(SlnParser.ParseConfiguration(mainSlnPath)
-            , toMergePaths.Select(SlnParser.ParseConfiguration).ToArray());
+    public static SolutionConfiguration Merge(string mainSlnPath, params string[] toMergePaths) => Merge(SlnParser.ParseConfiguration(mainSlnPath)
+        , toMergePaths.Select(SlnParser.ParseConfiguration).ToArray());
 
     public static SolutionConfiguration Merge(SolutionConfiguration mainSln, params SolutionConfiguration[] toMerge)
     {
@@ -29,9 +28,8 @@ public static class SlnMerger
                     refParent = project.ProjectFile.CreateNode(XmlNodeType.Element, ItemGroup, null);
                 else
                     project.ProjectFile.DocumentElement!.RemoveChild(refParent);
-                XmlNode rootNode = project.ProjectFile.RetrieveNodes("PropertyGroup").LastOrDefault()
-                                   ?? project.PackageReferences.RootNode
-                                   ?? throw new NullReferenceException();
+                XmlNode rootNode = project.ProjectFile.RetrieveNodes("PropertyGroup").LastOrDefault() ??
+                                   project.PackageReferences.RootNode ?? throw new NullReferenceException();
                 rootNode.ParentNode!.InsertAfter(refParent, rootNode);
 
                 if (refParent.Name != ItemGroup)
@@ -52,8 +50,7 @@ public static class SlnMerger
         return result;
     }
 
-    private static SolutionConfiguration MergeSolutionAndLinkFiles(SolutionConfiguration mainSln
-        , params SolutionConfiguration[] toMerge)
+    private static SolutionConfiguration MergeSolutionAndLinkFiles(SolutionConfiguration mainSln, params SolutionConfiguration[] toMerge)
     {
         SolutionConfiguration result = mainSln.Clone();
         List<string> commonPathParts = Path.GetDirectoryName(mainSln.SlnFile)!.Split('\\', '/').ToList();
@@ -62,8 +59,7 @@ public static class SlnMerger
             LinkFilesAndDirs(project);
 
         foreach (SolutionConfiguration conf in toMerge)
-            if (result.SlnVersionStr != conf.SlnVersionStr
-                || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
+            if (result.SlnVersionStr != conf.SlnVersionStr || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
                 throw new NotImplementedException();
             else
             {
@@ -99,8 +95,7 @@ public static class SlnMerger
 
                 foreach (Section section in conf.Sections)
                 {
-                    Section? exists = result.Sections.SingleOrDefault(s =>
-                        StringComparer.OrdinalIgnoreCase.Equals(s.Name, section.Name));
+                    Section? exists = result.Sections.SingleOrDefault(s => StringComparer.OrdinalIgnoreCase.Equals(s.Name, section.Name));
                     if (exists == null)
                     {
                         exists = section.Clone(false);
@@ -109,10 +104,9 @@ public static class SlnMerger
 
                     bool isConfSection = section.Name switch
                     {
-                        "SolutionConfigurationPlatforms" or "ProjectConfigurationPlatforms"
-                            or "NestedProjects" or "MonoDevelopProperties" or "ExtensibilityGlobals" => false,
-                        "SolutionProperties" => true,
-                        _ => throw new NotImplementedException()
+                        "SolutionConfigurationPlatforms" or "ProjectConfigurationPlatforms" or "NestedProjects" or "MonoDevelopProperties" or
+                            "ExtensibilityGlobals" => false
+                        , "SolutionProperties" => true, _ => throw new NotImplementedException()
                     };
 
                     foreach (string line in section.Lines)
@@ -138,8 +132,7 @@ public static class SlnMerger
         return result;
     }
 
-    private static void AddProjectReferences(SolutionConfiguration result, Project rootProject,
-        Project currentProject, XmlNode refParent)
+    private static void AddProjectReferences(SolutionConfiguration result, Project rootProject, Project currentProject, XmlNode refParent)
     {
         foreach (PackageReference package in currentProject.PackageReferences)
             AddProjectReferences(result, rootProject, refParent, package);
@@ -148,11 +141,7 @@ public static class SlnMerger
             AddProjectReferences(result, rootProject, refParent, project);
     }
 
-    private static void AddProjectReferences(
-        SolutionConfiguration result
-        , Project rootProject
-        , XmlNode refParent
-        , IReference reference)
+    private static void AddProjectReferences(SolutionConfiguration result, Project rootProject, XmlNode refParent, IReference reference)
     {
         if (rootProject.ProjectFile == null)
             throw new Exception("Should not happen");
@@ -177,7 +166,10 @@ public static class SlnMerger
         AddProjectReferences(result, rootProject, proj, refParent);
     }
 
-    public static readonly List<string> ExcludedFolders = new() { "\\.idea", "\\bin", "\\obj" };
+    public static readonly List<string> ExcludedFolders = new()
+    {
+        "\\.idea", "\\bin", "\\obj"
+    };
 
     private static void LinkFilesAndDirs(Project project)
     {
@@ -197,8 +189,11 @@ public static class SlnMerger
                 LinkFilesAndDirs(project.ProjectFile, absoluteProjectPath, dir, ignored, embedded);
     }
 
-    private static void LinkFilesAndDirs(XmlDocument xmlDocument, string absoluteProjectPath, string dir,
-        HashSet<string> ignored, HashSet<string> embedded)
+    private static void LinkFilesAndDirs(XmlDocument xmlDocument
+        , string absoluteProjectPath
+        , string dir
+        , HashSet<string> ignored
+        , HashSet<string> embedded)
     {
         LinkFiles(xmlDocument, absoluteProjectPath, dir, ignored, embedded);
 
@@ -206,8 +201,7 @@ public static class SlnMerger
             LinkFilesAndDirs(xmlDocument, absoluteProjectPath, child, ignored, embedded);
     }
 
-    private static void LinkFiles(XmlDocument xmlDocument, string absoluteProjectPath, string dir,
-        HashSet<string> ignored, HashSet<string> embedded)
+    private static void LinkFiles(XmlDocument xmlDocument, string absoluteProjectPath, string dir, HashSet<string> ignored, HashSet<string> embedded)
     {
         XmlNode parent = xmlDocument.CreateNode(XmlNodeType.Element, "ItemGroup", null);
         bool parentAdded = false;
@@ -215,8 +209,7 @@ public static class SlnMerger
             if (embedded.Any(e => file.EndsWith(e)))
             {
                 List<XmlNode> nodes = xmlDocument.RetrieveNodes("EmbeddedResource").ToList();
-                XmlNode node = nodes.Single(n =>
-                    file.EndsWith(n.Attributes![IncludeAttribute]?.Value ?? Guid.NewGuid().ToString()));
+                XmlNode node = nodes.Single(n => file.EndsWith(n.Attributes![IncludeAttribute]?.Value ?? Guid.NewGuid().ToString()));
                 string value = node.Attributes![IncludeAttribute]!.Value;
                 XmlNode link = xmlDocument.CreateNode(XmlNodeType.Element, "Link", null);
                 link.InnerText = value;
@@ -248,10 +241,10 @@ public static class SlnMerger
             }
     }
 
-    public static void WriteTo(string slnFilePath,
-        SolutionConfiguration conf,
-        bool copySlnFolderFiles,
-        params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
+    public static void WriteTo(string slnFilePath
+        , SolutionConfiguration conf
+        , bool copySlnFolderFiles
+        , params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
     {
         Dictionary<string, string> fileToCopySourceDic;
         try
@@ -383,7 +376,7 @@ public static class SlnMerger
     {
         foreach (XmlNode node in xmlDoc.RetrieveNodes("CopyToOutputDirectory"))
         {
-            string toCopy = prefix + node.ParentNode?.Attributes?["Update"]?.Value;
+            string toCopy = prefix + (node.ParentNode?.Attributes?["Update"]?.Value ?? node.ParentNode?.Attributes?["Include"]?.Value);
             if (toCopy != prefix && toCopy != "Never")
                 yield return toCopy;
         }
