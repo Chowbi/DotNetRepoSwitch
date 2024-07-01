@@ -295,11 +295,15 @@ public static class SlnMerger
 
                 Console.Write(project.Name + ' ');
 
+                StringComparer comparer = Environment.OSVersion.Platform.ToString().StartsWith("Win")
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal;
+
                 string[] origPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
                 string[] newPathParts = projectDirectory.Split(Path.DirectorySeparatorChar);
                 string commonPath = "", relPath = "";
                 for (int i = 0; i < origPathParts.Length; i++)
-                    if (string.IsNullOrWhiteSpace(relPath) && origPathParts[i] == newPathParts[i])
+                    if (string.IsNullOrWhiteSpace(relPath) && comparer.Equals(origPathParts[i], newPathParts[i]))
                         commonPath += origPathParts[i] + Path.DirectorySeparatorChar;
                     else
                         relPath += string.IsNullOrWhiteSpace(origPathParts[i]) ? "" : ".." + Path.DirectorySeparatorChar;
