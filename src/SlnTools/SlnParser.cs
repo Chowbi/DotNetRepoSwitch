@@ -1,4 +1,5 @@
-﻿using System.Xml;
+﻿using System.Diagnostics;
+using System.Xml;
 
 namespace SlnTools;
 
@@ -6,10 +7,9 @@ public static class SlnParser
 {
     public static readonly Dictionary<string, Action<SolutionConfiguration, string>> HeaderLinesPrefix = new()
     {
-        { "Microsoft Visual Studio Solution File, Format Version ", (s, v) => s.SlnVersionStr = v },
-        { "# Visual Studio Version ", (s, v) => s.VsMajorVersionStr = v },
-        { "VisualStudioVersion = ", (s, v) => s.VsVersionStr = v },
-        { "MinimumVisualStudioVersion = ", (s, v) => s.VsMinimalVersionStr = v }
+        { "Microsoft Visual Studio Solution File, Format Version ", (s, v) => s.SlnVersionStr = v }
+        , { "# Visual Studio Version ", (s, v) => s.VsMajorVersionStr = v }, { "VisualStudioVersion = ", (s, v) => s.VsVersionStr = v }
+        , { "MinimumVisualStudioVersion = ", (s, v) => s.VsMinimalVersionStr = v }
     };
 
     private static readonly char[] _Splits = { ')', '"', '{', '}', '=', ',' };
@@ -57,12 +57,14 @@ public static class SlnParser
                         parts = parts[1].Split(_Splits, _SplitOptions);
                         currentProject = new()
                         {
-                            FilePath = parts[2],
-                            AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2]),
-                            Name = parts[1],
-                            OriginalName = parts[1],
-                            ProjectGuid = parts[3],
-                            ProjectTypeGuid = parts[0]
+                            FilePath = parts[2].Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)
+                            , AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2])
+                                .Replace('/', Path.DirectorySeparatorChar)
+                                .Replace('\\', Path.DirectorySeparatorChar)
+                            , Name = parts[1]
+                            , OriginalName = parts[1]
+                            , ProjectGuid = parts[3]
+                            , ProjectTypeGuid = parts[0]
                         };
                         currentProject.AbsoluteOriginalDirectory =
                             Path.GetDirectoryName(currentProject.AbsoluteFilePath)
@@ -70,12 +72,9 @@ public static class SlnParser
                         if (currentProject.FilePath.EndsWith(SlnHelpers.CsProjExtension))
                         {
                             currentProject.ProjectFile = new XmlDocument();
-                            currentProject.ProjectFile.Load(
-                                Path.Combine(result.SlnDirectory, currentProject.FilePath));
-                            currentProject.PackageReferences.AddRange(
-                                currentProject.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
-                            currentProject.ProjectReferences.AddRange(
-                                currentProject.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
+                            currentProject.ProjectFile.Load(Path.Combine(result.SlnDirectory, currentProject.FilePath));
+                            currentProject.PackageReferences.AddRange(currentProject.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
+                            currentProject.ProjectReferences.AddRange(currentProject.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
                         }
 
                         result.Projects.Add(currentProject);
@@ -89,11 +88,9 @@ public static class SlnParser
                         {
                             IsPreSolution = parts[1]switch
                             {
-                                "preSolution" => true,
-                                "postSolution" => false,
-                                _ => throw new Exception("Should not happen")
-                            },
-                            Name = parts[0]
+                                "preSolution" => true, "postSolution" => false, _ => throw new Exception("Should not happen")
+                            }
+                            , Name = parts[0]
                         };
                         result.Sections.Add(currentSection);
                         break;
@@ -113,6 +110,9 @@ public static class SlnParser
 
     public static void WriteConfiguration(SolutionConfiguration sln, string pathToWrite)
     {
+        if (!pathToWrite.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("You must give a sln file path to write to", nameof(pathToWrite));
+
         List<string> content = new() { "" };
         List<string> keys = HeaderLinesPrefix.Keys.ToList();
         TryAdd(content, keys[0], sln.SlnVersionStr);
@@ -122,9 +122,10 @@ public static class SlnParser
 
         foreach (Project p in sln.Projects)
         {
-            content.Add($$"""
-                          Project("{{{p.ProjectTypeGuid}}}") = "{{p.Name}}", "{{p.FilePath}}", "{{{p.ProjectGuid}}}"
-                          """);
+            content.Add(
+                $$"""
+                  Project("{{{p.ProjectTypeGuid}}}") = "{{p.Name}}", "{{p.FilePath}}", "{{{p.ProjectGuid}}}"
+                  """);
             foreach (string slnLine in p.SlnLines)
                 content.Add(slnLine);
             content.Add("EndProject");

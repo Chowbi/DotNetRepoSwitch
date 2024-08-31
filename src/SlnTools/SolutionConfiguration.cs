@@ -112,11 +112,11 @@ public abstract class ReferenceList<T> : IEnumerable<T> where T : IReference
     protected HashSet<T> _List = new((IEqualityComparer<T>)new ReferenceComparer());
     public XmlNode? RootNode { get; private set; }
     public int Count => RootNode?.ChildNodes.Count ?? 0;
-    protected abstract T GetT(XmlNode node);
+    protected abstract T Get(XmlNode node);
 
     public bool Add(XmlNode node)
     {
-        bool result = _List.Add(GetT(node));
+        bool result = _List.Add(Get(node));
         if (!result)
             return result;
 
@@ -172,7 +172,7 @@ public class ProjectReference : IReference
 
 public class ProjectReferences : ReferenceList<ProjectReference>
 {
-    protected override ProjectReference GetT(XmlNode node) => new(node);
+    protected override ProjectReference Get(XmlNode node) => new(node);
 }
 
 public class PackageReference : IReference
@@ -195,7 +195,7 @@ public class PackageReference : IReference
 
 public class PackageReferences : ReferenceList<PackageReference>
 {
-    protected override PackageReference GetT(XmlNode node) => new(node);
+    protected override PackageReference Get(XmlNode node) => new(node);
 }
 
 public class Projects : List<Project>
