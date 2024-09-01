@@ -7,16 +7,26 @@ using static SlnHelpers;
 
 public static class SlnMerger
 {
-    public static SolutionConfiguration Merge(string mainSlnPath, params string[] toMergePaths)
-        => Merge(SlnParser.ParseConfiguration(mainSlnPath), toMergePaths.Select(SlnParser.ParseConfiguration).ToArray());
+    public static SolutionConfiguration Merge(IEnumerable<string> toMergePaths, IEnumerable<string>? toIgnore)
+        => Merge(toMergePaths.Select(SlnParser.ParseConfiguration).ToArray(), toIgnore);
 
-    public static SolutionConfiguration Merge(SolutionConfiguration mainSln, params SolutionConfiguration[] toMerge)
+    public static SolutionConfiguration Merge(IEnumerable<SolutionConfiguration> toMerge, IEnumerable<string>? toIgnore)
     {
-        if (toMerge.Length == 0)
-            return mainSln;
+        int count = toMerge.Count();
+        switch (count)
+        {
+            case 0:
+                throw new Exception("At least one Solution is needed");
+            case 1:
+                return toMerge.First();
+        }
 
-        Console.Write($"Merging {toMerge.Length + 1} sln files. ");
-        SolutionConfiguration result = MergeSolutionAndLinkFiles(mainSln, toMerge);
+        HashSet<string>? ignored = toIgnore is null
+            ? null
+            : new HashSet<string>(toIgnore.Select(i => i.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+
+        Console.Write($"Merging {count} sln files. ");
+        SolutionConfiguration result = MergeSolutionAndLinkFiles(toMerge, ignored);
         Console.WriteLine("Done");
 
         Console.Write("Replacing Packages by projects, adding dependant projects. ");
@@ -35,7 +45,7 @@ public static class SlnMerger
                 if (refParent.Name != ItemGroup)
                     throw new Exception($"refParent name should be {ItemGroup}");
 
-                AddProjectReferences(result, project, project, refParent);
+                AddProjectReferences(result, project, project, refParent, ignored);
             }
 
         Console.WriteLine("Done");
@@ -50,13 +60,13 @@ public static class SlnMerger
         return result;
     }
 
-    private static SolutionConfiguration MergeSolutionAndLinkFiles(SolutionConfiguration mainSln, params SolutionConfiguration[] toMerge)
+    private static SolutionConfiguration MergeSolutionAndLinkFiles(IEnumerable<SolutionConfiguration> toMerge, HashSet<string>? ignored)
     {
-        SolutionConfiguration result = mainSln.Clone();
-        List<string> commonPathParts = Path.GetDirectoryName(mainSln.SlnFile)!.Split('\\', '/').ToList();
+        SolutionConfiguration result = toMerge.First().Clone();
+        List<string> commonPathParts = Path.GetDirectoryName(result.SlnFile)!.Split('\\', '/').ToList();
 
         foreach (Project project in result.Projects)
-            LinkFilesAndDirs(project);
+            LinkFilesAndDirs(project, ignored);
 
         foreach (SolutionConfiguration conf in toMerge)
             if (result.SlnVersionStr != conf.SlnVersionStr || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
@@ -80,7 +90,7 @@ public static class SlnMerger
                 {
                     Project copy = project.Clone();
 
-                    LinkFilesAndDirs(copy);
+                    LinkFilesAndDirs(copy, ignored);
 
                     if (result.Projects.Any(p => StringComparer.OrdinalIgnoreCase.Equals(project.Name, p.Name)))
                     {
@@ -135,16 +145,26 @@ public static class SlnMerger
         return result;
     }
 
-    private static void AddProjectReferences(SolutionConfiguration result, Project rootProject, Project currentProject, XmlNode refParent)
+    private static void AddProjectReferences(
+        SolutionConfiguration result
+        , Project rootProject
+        , Project currentProject
+        , XmlNode refParent
+        , HashSet<string>? toIgnore)
     {
         foreach (PackageReference package in currentProject.PackageReferences)
-            AddProjectReferences(result, rootProject, refParent, package);
+            AddProjectReferences(result, rootProject, refParent, package, toIgnore);
 
         foreach (ProjectReference project in currentProject.ProjectReferences.ToList())
-            AddProjectReferences(result, rootProject, refParent, project);
+            AddProjectReferences(result, rootProject, refParent, project, toIgnore);
     }
 
-    private static void AddProjectReferences(SolutionConfiguration result, Project rootProject, XmlNode refParent, IReference reference)
+    private static void AddProjectReferences(
+        SolutionConfiguration result
+        , Project rootProject
+        , XmlNode refParent
+        , IReference reference
+        , HashSet<string>? toIgnore)
     {
         if (rootProject.ProjectFile == null)
             throw new Exception("Should not happen");
@@ -163,15 +183,10 @@ public static class SlnMerger
         // Add need Parent to work properly
         if (!rootProject.ProjectReferences.Add(newNode))
             refParent.RemoveChild(newNode);
-        AddProjectReferences(result, rootProject, proj, refParent);
+        AddProjectReferences(result, rootProject, proj, refParent, toIgnore);
     }
 
-    public static readonly List<string> ExcludedFolders = new()
-    {
-        $"{Path.DirectorySeparatorChar}.idea", $"{Path.DirectorySeparatorChar}bin", $"{Path.DirectorySeparatorChar}obj"
-    };
-
-    private static void LinkFilesAndDirs(Project project)
+    private static void LinkFilesAndDirs(Project project, HashSet<string>? toIgnore)
     {
         if (project.ProjectFile == null)
             return;
@@ -185,7 +200,7 @@ public static class SlnMerger
         string absoluteProjectPath = Path.GetDirectoryName(project.AbsoluteFilePath)!;
         LinkFiles(project.ProjectFile, absoluteProjectPath, absoluteProjectPath, ignored, embedded);
         foreach (string dir in Directory.EnumerateDirectories(Path.GetDirectoryName(project.AbsoluteFilePath)!))
-            if (ExcludedFolders.All(f => !dir.EndsWith(f)))
+            if (toIgnore is null || toIgnore.All(f => !dir.EndsWith(f)))
                 LinkFilesAndDirs(project.ProjectFile, absoluteProjectPath, dir, ignored, embedded);
     }
 
@@ -246,17 +261,12 @@ public static class SlnMerger
         string slnFilePath
         , SolutionConfiguration conf
         , bool copySlnFolderFiles
-        , params (string fileToCopyName, string absolutePathToSource)[] fileToCopySource)
+        , IEnumerable<FileReplacement>? fileToCopySource)
     {
-        Dictionary<string, string> fileToCopySourceDic;
-        try
-        {
-            fileToCopySourceDic = fileToCopySource.ToDictionary(c => c.fileToCopyName, c => c.absolutePathToSource);
-        }
-        catch (Exception e)
-        {
-            throw new Exception("fileToCopySource must not contains fileToCopyName duplicates.", e);
-        }
+        Dictionary<string, string?> fileToCopySourceDic = fileToCopySource?.ToDictionary(
+                                                              c => c.CsprojFilePath ?? throw new NullReferenceException()
+                                                              , c => c.ReplaceWithFilePath)
+                                                          ?? new Dictionary<string, string?>();
 
         Console.WriteLine("Writing result sln file and projects. ");
         string baseDirectoryPath = Path.GetDirectoryName(slnFilePath) ?? throw new NullReferenceException();
@@ -308,8 +318,7 @@ public static class SlnMerger
                         relPath += string.IsNullOrWhiteSpace(origPathParts[i]) ? "" : ".." + Path.DirectorySeparatorChar;
 
                 if (string.IsNullOrWhiteSpace(commonPath))
-                    throw new Exception(
-                        "To perform relative path calculation, merged sln path and destination path must have at least one common part, or be rooted.");
+                    commonPath = $"..{Path.DirectorySeparatorChar}";
 
                 StringBuilder sb = new();
                 using XmlWriter xmlWriter = XmlWriter.Create(sb, settings);
@@ -322,7 +331,10 @@ public static class SlnMerger
                 {
                     string destination = Path.Combine(projectDirectory, toCopy);
                     if (fileToCopySourceDic.TryGetValue(Path.GetFileName(destination), out string? source))
-                        CopyWithBackup(source, destination, true);
+                    {
+                        if (!string.IsNullOrWhiteSpace(source))
+                            CopyWithBackup(source, destination, true);
+                    }
                     else
                         CopyWithBackup(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination, false);
                 }

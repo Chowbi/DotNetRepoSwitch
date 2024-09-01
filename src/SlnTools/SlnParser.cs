@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Xml;
+﻿using System.Xml;
 
 namespace SlnTools;
 
@@ -111,7 +110,7 @@ public static class SlnParser
     public static void WriteConfiguration(SolutionConfiguration sln, string pathToWrite)
     {
         if (!pathToWrite.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("You must give a sln file path to write to", nameof(pathToWrite));
+            pathToWrite = Path.Combine(pathToWrite, "Merged.sln");
 
         List<string> content = new() { "" };
         List<string> keys = HeaderLinesPrefix.Keys.ToList();
