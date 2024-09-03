@@ -68,7 +68,7 @@ public static class SlnMerger
         foreach (Project project in result.Projects)
             LinkFilesAndDirs(project, ignored);
 
-        foreach (SolutionConfiguration conf in toMerge)
+        foreach (SolutionConfiguration conf in toMerge.Skip(1))
             if (result.SlnVersionStr != conf.SlnVersionStr || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
                 throw new NotImplementedException();
             else

@@ -9,11 +9,12 @@ public class Program
     public static void Main(string[] args)
     {
         string file = args.FirstOrDefault() ?? "appsettings.json";
+        string searched = Path.Combine(AppContext.BaseDirectory, file);
 
-        if (!File.Exists(file))
-            throw new Exception("You must add your configuration in appsettings.json, you can also give the configuration file path in args.");
+        if (!File.Exists(searched))
+            throw new Exception($"Configuration file has not been found: {searched}.");
 
-        string content = File.ReadAllText(file);
+        string content = File.ReadAllText(searched);
         MergeConfiguration? mergeConf = System.Text.Json.JsonSerializer.Deserialize<MergeConfiguration>(content);
 
         if (mergeConf?.Solutions is null || mergeConf.Solutions.Count == 0)
