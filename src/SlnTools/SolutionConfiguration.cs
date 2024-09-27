@@ -79,7 +79,8 @@ public class Project
     public string AbsoluteOriginalDirectory { get; set; } = null!;
     public string ProjectGuid { get; set; } = null!;
 
-    public XmlDocument? ProjectFile { get; set; }
+    public XmlDocument? ProjectFileOriginal { get; set; }
+    public XmlDocument? ProjectFileMerge { get; set; }
 
     public ProjectReferences ProjectReferences { get; } = new();
     public PackageReferences PackageReferences { get; } = new();

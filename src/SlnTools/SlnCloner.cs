@@ -34,12 +34,12 @@ public static class SlnCloner
             ProjectGuid = project.ProjectGuid,
             ProjectTypeGuid = project.ProjectTypeGuid
         };
-        if (project.ProjectFile != null)
+        if (project.ProjectFileOriginal != null)
         {
-            copy.ProjectFile = new XmlDocument();
-            copy.ProjectFile.LoadXml(project.ProjectFile.OuterXml);
-            copy.PackageReferences.AddRange(copy.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
-            copy.ProjectReferences.AddRange(copy.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
+            copy.ProjectFileOriginal = new XmlDocument();
+            copy.ProjectFileOriginal.LoadXml(project.ProjectFileOriginal.OuterXml);
+            copy.PackageReferences.AddRange(copy.ProjectFileOriginal.RetrieveNodes(SlnHelpers.PackageReference));
+            copy.ProjectReferences.AddRange(copy.ProjectFileOriginal.RetrieveNodes(SlnHelpers.ProjectReference));
         }
 
         return copy;

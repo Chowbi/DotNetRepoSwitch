@@ -70,10 +70,10 @@ public static class SlnParser
                             ?? throw new NullReferenceException();
                         if (currentProject.FilePath.EndsWith(SlnHelpers.CsProjExtension))
                         {
-                            currentProject.ProjectFile = new XmlDocument();
-                            currentProject.ProjectFile.Load(Path.Combine(result.SlnDirectory, currentProject.FilePath));
-                            currentProject.PackageReferences.AddRange(currentProject.ProjectFile.RetrieveNodes(SlnHelpers.PackageReference));
-                            currentProject.ProjectReferences.AddRange(currentProject.ProjectFile.RetrieveNodes(SlnHelpers.ProjectReference));
+                            currentProject.ProjectFileOriginal = new XmlDocument();
+                            currentProject.ProjectFileOriginal.Load(Path.Combine(result.SlnDirectory, currentProject.FilePath));
+                            currentProject.PackageReferences.AddRange(currentProject.ProjectFileOriginal.RetrieveNodes(SlnHelpers.PackageReference));
+                            currentProject.ProjectReferences.AddRange(currentProject.ProjectFileOriginal.RetrieveNodes(SlnHelpers.ProjectReference));
                         }
 
                         result.Projects.Add(currentProject);

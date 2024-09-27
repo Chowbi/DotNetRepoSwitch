@@ -9,7 +9,10 @@ public static class SlnHelpers
     public const string ProjectReference = "ProjectReference";
     public const string IncludeAttribute = "Include";
     public const string RemoveAttribute = "Remove";
+    public const string UpdateAttribute = "Update";
     public const string ItemGroup = "ItemGroup";
+    public const string Original = "Original";
+    public const string ReplaceWithAttribute = "ReplaceWith";
 
 
     public static IEnumerable<XmlNode> RetrieveNodes(this XmlNode root, string nodeName)
