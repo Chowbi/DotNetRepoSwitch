@@ -26,20 +26,19 @@ public static class SlnCloner
     {
         Project copy = new()
         {
-            FilePath = project.FilePath,
-            AbsoluteFilePath = project.AbsoluteFilePath,
-            AbsoluteOriginalDirectory = project.AbsoluteOriginalDirectory,
-            Name = project.Name,
-            OriginalName = project.OriginalName,
-            ProjectGuid = project.ProjectGuid,
-            ProjectTypeGuid = project.ProjectTypeGuid
+            FilePath = project.FilePath
+            , AbsoluteFilePath = project.AbsoluteFilePath
+            , AbsoluteOriginalDirectory = project.AbsoluteOriginalDirectory
+            , Name = project.Name
+            , OriginalName = project.OriginalName
+            , ProjectGuid = project.ProjectGuid
+            , ProjectTypeGuid = project.ProjectTypeGuid
         };
-        if (project.ProjectFileOriginal != null)
+        if (project.ProjectXml is not null)
         {
-            copy.ProjectFileOriginal = new XmlDocument();
-            copy.ProjectFileOriginal.LoadXml(project.ProjectFileOriginal.OuterXml);
-            copy.PackageReferences.AddRange(copy.ProjectFileOriginal.RetrieveNodes(SlnHelpers.PackageReference));
-            copy.ProjectReferences.AddRange(copy.ProjectFileOriginal.RetrieveNodes(SlnHelpers.ProjectReference));
+            copy.ProjectXml = (XmlDocument)project.ProjectXml.Clone();
+            copy.PackageReferences.AddRange(copy.ProjectXml.RetrieveNodes(SlnHelpers.PackageReference));
+            copy.ProjectReferences.AddRange(copy.ProjectXml.RetrieveNodes(SlnHelpers.ProjectReference));
         }
 
         return copy;
@@ -49,8 +48,7 @@ public static class SlnCloner
     {
         Section copy = new()
         {
-            IsPreSolution = section.IsPreSolution,
-            Name = section.Name
+            IsPreSolution = section.IsPreSolution, Name = section.Name
         };
         if (cloneLines)
             foreach (string line in section.Lines)

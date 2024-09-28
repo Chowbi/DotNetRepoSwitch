@@ -27,7 +27,7 @@ public class Program
                 + $"If {nameof(FileReplacement.ReplaceWithFilePath)} is set, {nameof(FileReplacement.CsprojFilePath)} will be replaced,"
                 + $"else it will be not be copied even if referenced in csproj.");
 
-        SolutionConfiguration conf = SlnMerger.Merge(mergeConf.Solutions, mergeConf.FolderToIgnore);
+        SolutionConfiguration conf = SlnMerger.Merge(mergeConf.Solutions);
 
         SlnMerger.WriteTo(mergeConf.DestinationPath, conf, mergeConf.CopySolutionFolderFiles, mergeConf.FileReplacements);
     }

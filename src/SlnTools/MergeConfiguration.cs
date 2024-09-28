@@ -10,8 +10,6 @@ public class MergeConfiguration
     public bool CopySolutionFolderFiles { get; set; } = true;
 
     public FileReplacements? FileReplacements { get; set; }
-
-    public List<string>? FolderToIgnore { get; set; }
 }
 
 public class FileReplacement

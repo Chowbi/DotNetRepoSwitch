@@ -7,46 +7,37 @@ using static SlnHelpers;
 
 public static class SlnMerger
 {
-    public static SolutionConfiguration Merge(IEnumerable<string> toMergePaths, IEnumerable<string>? toIgnore)
-        => Merge(toMergePaths.Select(SlnParser.ParseConfiguration), toIgnore);
+    public static SolutionConfiguration Merge(IEnumerable<string> toMergePaths)
+        => Merge(toMergePaths.Select(SlnParser.ParseConfiguration));
 
-    public static SolutionConfiguration Merge(IEnumerable<SolutionConfiguration> toMerge, IEnumerable<string>? toIgnore)
+    public static SolutionConfiguration Merge(IEnumerable<SolutionConfiguration> toMerge)
     {
         List<SolutionConfiguration> toMergeList = toMerge.ToList();
-        int count = toMergeList.Count;
-        switch (count)
-        {
-            case 0:
-                throw new Exception("At least one Solution is needed");
-            case 1:
-                return toMergeList.First();
-        }
+        
+        if (toMergeList.Count == 1)
+            throw new Exception("At least one Solution is needed");
 
-        HashSet<string> ignored = toIgnore is null
-            ? new HashSet<string>()
-            : new HashSet<string>(toIgnore.Select(i => i.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
-
-        Console.Write($"Merging {count} sln files. ");
-        SolutionConfiguration result = MergeSolutionAndLinkFiles(toMergeList, ignored);
+        Console.Write($"Merging {toMergeList.Count} sln files. ");
+        SolutionConfiguration result = MergeSolutions(toMergeList);
         Console.WriteLine("Done");
 
         Console.Write("Replacing Packages by projects, adding dependant projects. ");
         foreach (Project project in result.Projects)
-            if (project.ProjectFileMerge != null)
+            if (project.ProjectXml != null)
             {
                 XmlNode? refParent = project.ProjectReferences.RootNode;
                 if (refParent == null)
-                    refParent = project.ProjectFileMerge.CreateNode(XmlNodeType.Element, ItemGroup, null);
+                    refParent = project.ProjectXml.CreateNode(XmlNodeType.Element, ItemGroup, null);
                 else
-                    project.ProjectFileMerge.DocumentElement!.RemoveChild(refParent);
-                XmlNode rootNode = project.ProjectFileMerge.RetrieveNodes("PropertyGroup").LastOrDefault()
+                    project.ProjectXml.DocumentElement!.RemoveChild(refParent);
+                XmlNode rootNode = project.ProjectXml.RetrieveNodes("PropertyGroup").LastOrDefault()
                                    ?? project.PackageReferences.RootNode ?? throw new NullReferenceException();
                 rootNode.ParentNode!.InsertAfter(refParent, rootNode);
 
                 if (refParent.Name != ItemGroup)
                     throw new Exception($"refParent name should be {ItemGroup}");
 
-                AddProjectReferences(result, project, project, refParent, ignored);
+                AddProjectReferences(result, project, project, refParent);
             }
 
         Console.WriteLine("Done");
@@ -61,17 +52,10 @@ public static class SlnMerger
         return result;
     }
 
-    private static SolutionConfiguration MergeSolutionAndLinkFiles(List<SolutionConfiguration> toMerge, HashSet<string> ignored)
+    private static SolutionConfiguration MergeSolutions(List<SolutionConfiguration> toMerge)
     {
         SolutionConfiguration result = toMerge.First().Clone();
         List<string> commonPathParts = Path.GetDirectoryName(result.SlnFile)!.Split('\\', '/').ToList();
-
-        foreach (Project project in result.Projects)
-            if (project.ProjectFileOriginal is not null)
-            {
-                CloneProjectFile(project, ignored);
-                // LinkFilesAndDirs(project, ignored);
-            }
 
         foreach (SolutionConfiguration conf in toMerge.Skip(1))
             if (result.SlnVersionStr != conf.SlnVersionStr || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
@@ -94,17 +78,16 @@ public static class SlnMerger
                 foreach (Project project in conf.Projects)
                 {
                     Project copy = project.Clone();
+                    bool isDuplicated = result.Projects.Any(p => StringComparer.OrdinalIgnoreCase.Equals(project.Name, p.Name));
                     result.Projects.Add(copy);
-                    if (result.Projects.Any(p => StringComparer.OrdinalIgnoreCase.Equals(project.Name, p.Name)))
-                    {
-                        string newName = copy.Name + '_' + Path.GetFileNameWithoutExtension(conf.SlnFile);
-                        copy.FilePath = copy.FilePath.Replace(copy.Name, newName);
-                        copy.AbsoluteFilePath = copy.AbsoluteFilePath.Replace(copy.Name, newName);
-                        copy.Name = newName;
-                    }
 
-                    CloneProjectFile(copy, ignored);
-                    // LinkFilesAndDirs(copy, ignored);
+                    if (!isDuplicated)
+                        continue;
+
+                    string newName = copy.Name + '_' + Path.GetFileNameWithoutExtension(conf.SlnFile);
+                    copy.FilePath = copy.FilePath.Replace(copy.Name, newName);
+                    copy.AbsoluteFilePath = copy.AbsoluteFilePath.Replace(copy.Name, newName);
+                    copy.Name = newName;
                 }
 
                 foreach (Section section in conf.Sections)
@@ -123,7 +106,8 @@ public static class SlnMerger
                             or "NestedProjects"
                             or "MonoDevelopProperties"
                             or "ExtensibilityGlobals" => false
-                        , "SolutionProperties" => true, _ => throw new NotImplementedException()
+                        , "SolutionProperties" => true
+                        , _ => throw new NotImplementedException()
                     };
 
                     foreach (string line in section.Lines)
@@ -149,134 +133,34 @@ public static class SlnMerger
         return result;
     }
 
-    private static void CloneProjectFile(Project project, HashSet<string> ignored)
-    {
-        if (project.ProjectFileOriginal == null)
-            throw new ArgumentNullException(nameof(project.ProjectFileOriginal));
-        project.ProjectFileMerge = (XmlDocument)project.ProjectFileOriginal.Clone();
-
-        foreach (XmlNode node in project.ProjectFileMerge.ChildNodes)
-            CloneProjectFile(node, ignored, project.AbsoluteOriginalDirectory);
-    }
-
-    private static void CloneProjectFile(XmlNode node, HashSet<string> ignored, string absoluteProjectPath)
-    {
-        if (node.Name == SlnHelpers.PackageReference)
-            return;
-
-        CheckFileAttribute(node, ignored, absoluteProjectPath, IncludeAttribute);
-        CheckFileAttribute(node, ignored, absoluteProjectPath, SlnHelpers.UpdateAttribute);
-        CheckFileAttribute(node, ignored, absoluteProjectPath, RemoveAttribute);
-
-        foreach (XmlNode child in node.ChildNodes)
-            CloneProjectFile(child, ignored, absoluteProjectPath);
-    }
-
-    private static void CheckFileAttribute(XmlNode node, HashSet<string> ignored, string absoluteProjectPath, string attrName)
-    {
-        string? file = node.Attributes?[attrName]?.Value;
-        if (!string.IsNullOrWhiteSpace(file))
-        {
-            if (node.Attributes!.Count != 1)
-                throw new NotImplementedException();
-            string fullPath = absoluteProjectPath + Path.DirectorySeparatorChar + file.TrimStart('/', '\\', '.', ' ');
-            if (!string.IsNullOrWhiteSpace(node.Attributes![ReplaceWithAttribute]?.Value))
-                throw new Exception("Both Include and Update attributes are not expected on the same node");
-
-            XmlAttribute attr = node.OwnerDocument!.CreateAttribute(Original);
-            attr.Value = file;
-            node.Attributes.Append(attr);
-
-            attr = node.OwnerDocument!.CreateAttribute(ReplaceWithAttribute);
-            attr.Value = fullPath;
-            node.Attributes.Append(attr);
-            ignored.Add(file);
-        }
-    }
-
-    private static void LinkFilesAndDirs(Project project, HashSet<string> toIgnore)
-    {
-        if (project.ProjectFileOriginal == null)
-            throw new ArgumentNullException(nameof(project.ProjectFileOriginal));
-        toIgnore.Add(project.FilePath);
-        LinkFiles(project.ProjectFileOriginal, project.AbsoluteOriginalDirectory, project.AbsoluteOriginalDirectory, toIgnore);
-        foreach (string dir in Directory.EnumerateDirectories(Path.GetDirectoryName(project.AbsoluteFilePath)!))
-            if (toIgnore.All(f => !dir.EndsWith(f)))
-                LinkFilesAndDirs(project.ProjectFileOriginal, project.AbsoluteOriginalDirectory, dir, toIgnore);
-    }
-
-    private static void LinkFilesAndDirs(
-        XmlDocument xmlDocument
-        , string absoluteProjectPath
-        , string dir
-        , HashSet<string> ignored)
-    {
-        LinkFiles(xmlDocument, absoluteProjectPath, dir, ignored);
-
-        foreach (string child in Directory.EnumerateDirectories(dir))
-            LinkFilesAndDirs(xmlDocument, absoluteProjectPath, child, ignored);
-    }
-
-    private static void LinkFiles(XmlDocument xmlDocument, string absoluteProjectPath, string dir, HashSet<string> ignored)
-    {
-        XmlNode parent = xmlDocument.CreateNode(XmlNodeType.Element, "ItemGroup", null);
-        bool parentAdded = false;
-        foreach (string file in Directory.EnumerateFiles(dir, "*.cs"))
-            if (ignored.All(i => !file.EndsWith(i)))
-            {
-                if (!parentAdded)
-                {
-                    parentAdded = true;
-                    xmlDocument.DocumentElement!.AppendChild(parent);
-                }
-
-                /*
-                    <Compile Include="..\..\A3CsUtilsCommon\A3_Common\Api\Excel\Excel.cs">
-                        <Link>Api\Excel\Excel.cs</Link>
-                    </Compile>
-                 */
-                XmlNode compile = xmlDocument.CreateNode(XmlNodeType.Element, "Compile", null);
-                XmlAttribute attr = xmlDocument.CreateAttribute(IncludeAttribute);
-                attr.Value = file;
-                compile.Attributes!.Append(attr);
-                XmlNode link = xmlDocument.CreateNode(XmlNodeType.Element, "Link", null);
-                link.InnerText = file.Replace(absoluteProjectPath, "").TrimStart('\\', '/');
-                compile.AppendChild(link);
-                parent.AppendChild(compile);
-            }
-    }
-
-
     private static void AddProjectReferences(
         SolutionConfiguration result
         , Project rootProject
         , Project currentProject
-        , XmlNode refParent
-        , HashSet<string>? toIgnore)
+        , XmlNode refParent)
     {
         foreach (PackageReference package in currentProject.PackageReferences)
-            AddProjectReferences(result, rootProject, refParent, package, toIgnore);
+            AddProjectReferences(result, rootProject, refParent, package);
 
         foreach (ProjectReference project in currentProject.ProjectReferences.ToList())
-            AddProjectReferences(result, rootProject, refParent, project, toIgnore);
+            AddProjectReferences(result, rootProject, refParent, project);
     }
 
     private static void AddProjectReferences(
         SolutionConfiguration result
         , Project rootProject
         , XmlNode refParent
-        , IReference reference
-        , HashSet<string>? toIgnore)
+        , IReference reference)
     {
-        if (rootProject.ProjectFileOriginal == null)
+        if (rootProject.ProjectXml == null)
             throw new Exception("Should not happen");
 
         Project? proj = result.Projects.SingleOrDefault(p => p.Name == reference.Name);
         if (proj == null)
             return;
 
-        XmlNode newNode = rootProject.ProjectFileOriginal.CreateNode(XmlNodeType.Element, SlnHelpers.ProjectReference, null);
-        XmlAttribute attr = rootProject.ProjectFileOriginal.CreateAttribute(IncludeAttribute);
+        XmlNode newNode = rootProject.ProjectXml.CreateNode(XmlNodeType.Element, SlnHelpers.ProjectReference, null);
+        XmlAttribute attr = rootProject.ProjectXml.CreateAttribute(IncludeAttribute);
         for (int i = 0; i < rootProject.FilePath.Count(c => c is '\\' or '/'); i++)
             attr.Value += $"..{Path.DirectorySeparatorChar}";
         attr.Value += proj.FilePath;
@@ -285,12 +169,12 @@ public static class SlnMerger
         // Add need Parent to work properly
         if (!rootProject.ProjectReferences.Add(newNode))
             refParent.RemoveChild(newNode);
-        AddProjectReferences(result, rootProject, proj, refParent, toIgnore);
+        AddProjectReferences(result, rootProject, proj, refParent);
     }
 
 
     public static void WriteTo(
-        string slnFilePath
+        string destinationSlnFilePath
         , SolutionConfiguration conf
         , bool copySlnFolderFiles
         , List<FileReplacement>? fileToCopySource)
@@ -300,24 +184,29 @@ public static class SlnMerger
                                                               , c => c.ReplaceWithFilePath)
                                                           ?? new Dictionary<string, string?>();
 
-        Console.WriteLine("Writing result sln file and projects. ");
-        string baseDirectoryPath = Path.GetDirectoryName(slnFilePath) ?? throw new NullReferenceException();
-        if (!Directory.Exists(baseDirectoryPath))
-            Directory.CreateDirectory(baseDirectoryPath);
 
-        SlnParser.WriteConfiguration(conf, slnFilePath);
+        if (!destinationSlnFilePath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            destinationSlnFilePath = Path.Combine(destinationSlnFilePath, "Merged.sln");
+
+        Console.WriteLine("Writing result sln file and projects. ");
+        string toSlnDir = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException();
+        if (!Directory.Exists(toSlnDir))
+            Directory.CreateDirectory(toSlnDir);
+
+
+        SlnParser.WriteConfiguration(conf, destinationSlnFilePath);
 
         if (copySlnFolderFiles)
         {
             Console.WriteLine("Copying solution directory files");
-            string originalRootName = Path.GetFileNameWithoutExtension(conf.SlnFile);
-            string newRootName = Path.GetFileNameWithoutExtension(slnFilePath);
+            string sourceSlnName = Path.GetFileNameWithoutExtension(conf.SlnFile);
+            string newSlnName = Path.GetFileNameWithoutExtension(destinationSlnFilePath);
             foreach (string file in Directory.EnumerateFiles(conf.SlnDirectory))
                 if (file != conf.SlnFile)
                 {
-                    string fileName = Path.GetFileName(file).Replace(originalRootName, newRootName);
+                    string fileName = Path.GetFileName(file).Replace(sourceSlnName, newSlnName);
                     Console.Write($"{fileName} ");
-                    string dest = Path.Combine(baseDirectoryPath, fileName);
+                    string dest = Path.Combine(toSlnDir, fileName);
                     CopyWithBackup(file, dest, false);
                 }
 
@@ -325,121 +214,134 @@ public static class SlnMerger
         }
 
         XmlWriterSettings settings = new() { Indent = true, Encoding = Encoding.UTF8 };
-        Console.WriteLine($"Merging projects to {slnFilePath}");
+        Console.WriteLine($"Merging projects to {destinationSlnFilePath}");
         foreach (Project project in conf.Projects)
-            if (project.ProjectFileMerge != null)
+            if (project.ProjectXml != null)
             {
-                string file = Path.Combine(baseDirectoryPath, project.FilePath.TrimStart('.', '\\', '/'));
-                string projectDirectory = Path.GetDirectoryName(file)!;
-                if (!Directory.Exists(projectDirectory))
-                    Directory.CreateDirectory(projectDirectory);
-
                 Console.Write(project.Name + ' ');
 
                 StringComparer comparer = Environment.OSVersion.Platform.ToString().StartsWith("Win")
                     ? StringComparer.OrdinalIgnoreCase
                     : StringComparer.Ordinal;
 
-                string[] origPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
-                string[] newPathParts = projectDirectory.Split(Path.DirectorySeparatorChar);
-                string commonPath = "", relPath = "";
-                for (int i = 0; i < origPathParts.Length; i++)
-                    if (string.IsNullOrWhiteSpace(relPath) && comparer.Equals(origPathParts[i], newPathParts[i]))
-                        commonPath += origPathParts[i] + Path.DirectorySeparatorChar;
-                    else
-                        relPath += string.IsNullOrWhiteSpace(origPathParts[i]) ? "" : ".." + Path.DirectorySeparatorChar;
+                string toProjFile = Path.Combine(toSlnDir, project.FilePath.TrimStart('.', '\\', '/'));
+                string toProjDir = Path.GetDirectoryName(toProjFile)!;
+                if (!Directory.Exists(toProjDir))
+                    Directory.CreateDirectory(toProjDir);
 
-                if (string.IsNullOrWhiteSpace(commonPath))
-                    commonPath = $"..{Path.DirectorySeparatorChar}";
+                string[] fromPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
+                string[] toPathParts = toProjDir.Split(Path.DirectorySeparatorChar);
+                List<string> diffs = new();
+                for (int i = 0; i < fromPathParts.Length; i++)
+                    if (diffs.Count != 0 || !comparer.Equals(fromPathParts[i], toPathParts[i]))
+                        diffs.Add(fromPathParts[i]);
+
+                foreach (string _ in diffs.ToList())
+                    diffs.Insert(0, "..");
+                string relPath = "";
+                foreach (string s in diffs)
+                    relPath += s + Path.DirectorySeparatorChar;
+
+                WriteProjectConfiguration proj = new()
+                {
+                    Project = project
+                    , ReplaceDic = fileToCopySourceDic
+                    , Destination = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException("No directory to sln path")
+                    , RelativePath = relPath
+                };
 
                 XmlDocument newProj = new();
-                CopyProject(project.ProjectFileMerge, newProj, fileToCopySourceDic, relPath);
+                CopyProject(proj, project.ProjectXml, newProj);
 
                 StringBuilder sb = new();
                 using XmlWriter xmlWriter = XmlWriter.Create(sb, settings);
                 newProj.WriteTo(xmlWriter);
                 xmlWriter.Flush();
-                string xml = sb.ToString();
-                string toWrite = xml.Replace(commonPath, relPath);
-                File.WriteAllText(file, toWrite, Encoding.UTF8);
-                foreach (string toCopy in GetToCopy(newProj, ""))
-                {
-                    string destination = Path.Combine(projectDirectory, toCopy);
-                    if (fileToCopySourceDic.TryGetValue(Path.GetFileName(destination), out string? source))
-                    {
-                        if (!string.IsNullOrWhiteSpace(source))
-                            CopyWithBackup(source, destination, true);
-                    }
-                    else
-                        CopyWithBackup(Path.Combine(project.AbsoluteOriginalDirectory, toCopy), destination, false);
-                }
+                File.WriteAllText(toProjFile, sb.ToString(), Encoding.UTF8);
             }
 
         Console.WriteLine();
         Console.WriteLine("Done");
     }
 
-    private static void CopyProject(XmlNode from, XmlNode to, Dictionary<string, string?> fileToCopySourceDic, string destination, string relPath)
+    private static void CopyProject(WriteProjectConfiguration proj, XmlNode from, XmlNode to)
     {
+        XmlDocument toDoc = to.OwnerDocument ?? (XmlDocument)to;
         if (from.Name == "Project")
         {
             // <Content Include="..\..\MyContentFiles\**\*.*"><Link>%(RecursiveDir)%(Filename)%(Extension)</Link></Content>
 
-            XmlNode elt = to.OwnerDocument!.CreateElement("Compile");
-            to.AppendChild(elt);
-            XmlAttribute attr = to.OwnerDocument!.CreateAttribute(IncludeAttribute);
-            attr.Value = Path.Combine(relPath, "**", "*.cs");
+            XmlElement group = toDoc.CreateElement("ItemGroup");
+            to.AppendChild(group);
+            XmlNode elt = toDoc.CreateElement("Compile");
+            group.AppendChild(elt);
+            XmlAttribute attr = toDoc.CreateAttribute(IncludeAttribute);
+            attr.Value = Path.Combine(proj.RelativePath, "**", "*.cs");
             elt.Attributes!.Append(attr);
-            XmlNode link = to.OwnerDocument!.CreateElement("Link");
+            XmlNode link = toDoc.CreateElement("Link");
             elt.AppendChild(link);
             link.InnerText = "%(RecursiveDir)%(Filename)%(Extension)";
+
+            elt = toDoc.CreateElement("Compile");
+            group.AppendChild(elt);
+            attr = toDoc.CreateAttribute(RemoveAttribute);
+            attr.Value = Path.Combine(proj.RelativePath, "bin", "**", "*.cs");
+            elt.Attributes!.Append(attr);
+
+            elt = toDoc.CreateElement("Compile");
+            group.AppendChild(elt);
+            attr = toDoc.CreateAttribute(RemoveAttribute);
+            attr.Value = Path.Combine(proj.RelativePath, "obj", "**", "*.cs");
+            elt.Attributes!.Append(attr);
         }
 
         foreach (XmlNode child in from.ChildNodes)
-        {
-            XmlNode copy = to.OwnerDocument!.CreateElement(child.Name);
-            foreach (XmlAttribute attrFrom in from.Attributes!)
+            switch (child)
             {
-                XmlAttribute attrTo = to.OwnerDocument!.CreateAttribute(attrFrom.Name);
-                attrTo.Value = attrFrom.Value;
-                copy.Attributes!.Append(attrTo);
-            }
+                case XmlElement:
+                    XmlNode copy = toDoc.CreateElement(child.Name);
+                    to.AppendChild(copy);
+                    foreach (XmlAttribute attrFrom in child.Attributes!)
+                    {
+                        XmlAttribute attrTo = toDoc.CreateAttribute(attrFrom.Name);
+                        attrTo.Value = attrFrom.Value;
+                        copy.Attributes!.Append(attrTo);
+                    }
 
-            if (child.Name != SlnHelpers.PackageReference)
-            {
-                ReplaceFileAttribute(copy, UpdateAttribute, fileToCopySourceDic, destination, relPath);
-                ReplaceFileAttribute(copy, IncludeAttribute, fileToCopySourceDic, destination, relPath);
-                ReplaceFileAttribute(copy, RemoveAttribute, fileToCopySourceDic, destination, relPath);
-            }
+                    TryReplaceFileAttribute(proj, copy, UpdateAttribute);
+                    TryReplaceFileAttribute(proj, copy, IncludeAttribute);
+                    TryReplaceFileAttribute(proj, copy, RemoveAttribute);
 
-            CopyProject(child, copy, fileToCopySourceDic, destination, relPath);
-        }
+                    CopyProject(proj, child, copy);
+                    break;
+                case XmlText:
+                    to.InnerText = from.InnerText;
+                    break;
+            }
     }
 
-    private static void ReplaceFileAttribute(
-        XmlNode node
-        , string attrName
-        , Dictionary<string, string?> fileToCopySourceDic
-        , string destination
-        , string relPath)
+    private static void TryReplaceFileAttribute(WriteProjectConfiguration proj, XmlNode node, string attrName)
     {
-        if (node.Name == SlnHelpers.PackageReference)
+        if (node.Name == SlnHelpers.PackageReference
+            || node.Name == SlnHelpers.ProjectReference
+            || node.Name == "FrameworkReference"
+            || node.Attributes is null)
             return;
 
-        XmlAttribute? attr = node.Attributes?[attrName];
+        XmlAttribute? attr = node.Attributes[attrName];
         if (string.IsNullOrWhiteSpace(attr?.Value))
             return;
 
-        string copyTo = Path.Combine(destination, attr.Value);
-        if (fileToCopySourceDic.TryGetValue(attr.Value, out string? source))
-        {
+        if (proj.ReplaceDic.TryGetValue(attr.Value, out string? source))
             if (!string.IsNullOrWhiteSpace(source))
-                CopyWithBackup(source, destination, true);
-        }
+            {
+                string copyTo = Path.Combine(proj.Destination, proj.Project.Name, attr.Value);
+                CopyWithBackup(source, copyTo, true);
+            }
+            else
+                Console.WriteLine($"Copy of {attr.Value} is ignored.");
         else
-            CopyWithBackup(Path.Combine(project.AbsoluteOriginalDirectory, copyTo), destination, false);
-
-        attr.Value = Path.Combine(relPath, attr.Value);
+            attr.Value = Path.Combine(proj.RelativePath, attr.Value);
     }
 
 
@@ -502,8 +404,10 @@ public static class SlnMerger
     }
 }
 
-internal class SlnMergeConfiguration
+internal class WriteProjectConfiguration
 {
     public required Project Project { get; set; }
-    public required Dictionary<string, string> toReplace { get; set; }
+    public required Dictionary<string, string?> ReplaceDic { get; set; }
+    public required string Destination { get; set; }
+    public required string RelativePath { get; set; }
 }
