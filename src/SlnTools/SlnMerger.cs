@@ -14,7 +14,7 @@ public static class SlnMerger
     {
         List<SolutionConfiguration> toMergeList = toMerge.ToList();
         
-        if (toMergeList.Count == 1)
+        if (toMergeList.Count == 0)
             throw new Exception("At least one Solution is needed");
 
         Console.Write($"Merging {toMergeList.Count} sln files. ");
