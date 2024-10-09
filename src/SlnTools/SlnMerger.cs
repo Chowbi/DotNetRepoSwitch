@@ -13,7 +13,7 @@ public static class SlnMerger
     public static SolutionConfiguration Merge(IEnumerable<SolutionConfiguration> toMerge)
     {
         List<SolutionConfiguration> toMergeList = toMerge.ToList();
-        
+
         if (toMergeList.Count == 0)
             throw new Exception("At least one Solution is needed");
 
@@ -229,25 +229,12 @@ public static class SlnMerger
                 if (!Directory.Exists(toProjDir))
                     Directory.CreateDirectory(toProjDir);
 
-                string[] fromPathParts = project.AbsoluteOriginalDirectory.Split(Path.DirectorySeparatorChar);
-                string[] toPathParts = toProjDir.Split(Path.DirectorySeparatorChar);
-                List<string> diffs = new();
-                for (int i = 0; i < fromPathParts.Length; i++)
-                    if (diffs.Count != 0 || !comparer.Equals(fromPathParts[i], toPathParts[i]))
-                        diffs.Add(fromPathParts[i]);
-
-                foreach (string _ in diffs.ToList())
-                    diffs.Insert(0, "..");
-                string relPath = "";
-                foreach (string s in diffs)
-                    relPath += s + Path.DirectorySeparatorChar;
-
                 WriteProjectConfiguration proj = new()
                 {
                     Project = project
                     , ReplaceDic = fileToCopySourceDic
                     , Destination = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException("No directory to sln path")
-                    , RelativePath = relPath
+                    , RelativePath = Path.GetRelativePath(toProjDir, project.AbsoluteOriginalDirectory)
                 };
 
                 XmlDocument newProj = new();
@@ -341,7 +328,9 @@ public static class SlnMerger
             else
                 Console.WriteLine($"Copy of {attr.Value} is ignored.");
         else
-            attr.Value = Path.Combine(proj.RelativePath, attr.Value);
+            attr.Value = Path.Combine(
+                proj.RelativePath
+                , attr.Value.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar));
     }
 
 
