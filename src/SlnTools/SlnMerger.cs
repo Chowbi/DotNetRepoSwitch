@@ -313,11 +313,11 @@ public static class SlnMerger
 
     private static void AddLinkIfEmbeddedRessource(XmlNode child, XmlDocument toDoc, XmlNode copy)
     {
-        if (child.Name == "EmbeddedResource")
+        if (child.Name == EmbeddedResource)
         {
-            XmlElement link = toDoc.CreateElement("Link");
+            XmlElement link = toDoc.CreateElement(Link);
 
-            string? includeValue = child.Attributes?["Include"]?.Value;
+            string? includeValue = child.Attributes?[IncludeAttribute]?.Value;
 
             if (!string.IsNullOrEmpty(includeValue))
             {
