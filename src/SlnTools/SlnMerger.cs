@@ -58,7 +58,7 @@ public static class SlnMerger
         List<string> commonPathParts = Path.GetDirectoryName(result.SlnFile)!.Split('\\', '/').ToList();
 
         foreach (SolutionConfiguration conf in toMerge.Skip(1))
-            if (result.SlnVersionStr != conf.SlnVersionStr || (result.VsVersion ?? conf.VsVersion) != (conf.VsVersion ?? result.VsVersion))
+            if (result.SlnVersionStr != conf.SlnVersionStr)
                 throw new NotImplementedException();
             else
             {
@@ -287,6 +287,9 @@ public static class SlnMerger
             {
                 case XmlElement:
                     XmlNode copy = toDoc.CreateElement(child.Name);
+
+                    AddLinkIfEmbeddedRessource(child, toDoc, copy);
+
                     to.AppendChild(copy);
                     foreach (XmlAttribute attrFrom in child.Attributes!)
                     {
@@ -294,6 +297,7 @@ public static class SlnMerger
                         attrTo.Value = attrFrom.Value;
                         copy.Attributes!.Append(attrTo);
                     }
+
 
                     TryReplaceFileAttribute(proj, copy, UpdateAttribute);
                     TryReplaceFileAttribute(proj, copy, IncludeAttribute);
@@ -305,6 +309,22 @@ public static class SlnMerger
                     to.InnerText = from.InnerText;
                     break;
             }
+    }
+
+    private static void AddLinkIfEmbeddedRessource(XmlNode child, XmlDocument toDoc, XmlNode copy)
+    {
+        if (child.Name == "EmbeddedResource")
+        {
+            XmlElement link = toDoc.CreateElement("Link");
+
+            string? includeValue = child.Attributes?["Include"]?.Value;
+
+            if (!string.IsNullOrEmpty(includeValue))
+            {
+                link.InnerText = includeValue; 
+            }
+            copy.AppendChild(link);
+        }
     }
 
     private static void TryReplaceFileAttribute(WriteProjectConfiguration proj, XmlNode node, string attrName)
