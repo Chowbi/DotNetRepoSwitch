@@ -11,6 +11,8 @@ public static class SlnHelpers
     public const string RemoveAttribute = "Remove";
     public const string UpdateAttribute = "Update";
     public const string ItemGroup = "ItemGroup";
+    public const string EmbeddedResource = "EmbeddedResource";
+    public const string Link = "Link";
 
 
     public static IEnumerable<XmlNode> RetrieveNodes(this XmlNode root, string nodeName)
