@@ -285,25 +285,23 @@ public static class SlnMerger
         foreach (XmlNode child in from.ChildNodes)
             switch (child)
             {
-                case XmlElement:
-                    XmlNode copy = toDoc.CreateElement(child.Name);
-
-                    AddLinkIfEmbeddedRessource(child, toDoc, copy);
-
+                case XmlElement element:
+                    XmlNode copy = toDoc.CreateElement(element.Name);
+                    AddLinkIfEmbeddedRessource(element, toDoc, copy);
                     to.AppendChild(copy);
-                    foreach (XmlAttribute attrFrom in child.Attributes!)
+
+                    foreach (XmlAttribute attrFrom in element.Attributes!)
                     {
                         XmlAttribute attrTo = toDoc.CreateAttribute(attrFrom.Name);
                         attrTo.Value = attrFrom.Value;
                         copy.Attributes!.Append(attrTo);
                     }
 
-
                     TryReplaceFileAttribute(proj, copy, UpdateAttribute);
                     TryReplaceFileAttribute(proj, copy, IncludeAttribute);
                     TryReplaceFileAttribute(proj, copy, RemoveAttribute);
 
-                    CopyProject(proj, child, copy);
+                    CopyProject(proj, element, copy);
                     break;
                 case XmlText:
                     to.InnerText = from.InnerText;
@@ -311,19 +309,17 @@ public static class SlnMerger
             }
     }
 
-    private static void AddLinkIfEmbeddedRessource(XmlNode child, XmlDocument toDoc, XmlNode copy)
+    private static void AddLinkIfEmbeddedRessource(XmlElement element, XmlDocument toDoc, XmlNode copy)
     {
-        if (child.Name == EmbeddedResource)
+        if (element.Name == EmbeddedResource)
         {
             XmlElement link = toDoc.CreateElement(Link);
-
-            string? includeValue = child.Attributes?[IncludeAttribute]?.Value;
-
+            string? includeValue = element.Attributes[IncludeAttribute]?.Value;
             if (!string.IsNullOrEmpty(includeValue))
             {
-                link.InnerText = includeValue; 
+                link.InnerText = includeValue;
+                copy.AppendChild(link);
             }
-            copy.AppendChild(link);
         }
     }
 
