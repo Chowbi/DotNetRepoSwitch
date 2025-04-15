@@ -258,28 +258,8 @@ public static class SlnMerger
         {
             // <Content Include="..\..\MyContentFiles\**\*.*"><Link>%(RecursiveDir)%(Filename)%(Extension)</Link></Content>
 
-            XmlElement group = toDoc.CreateElement("ItemGroup");
-            to.AppendChild(group);
-            XmlNode elt = toDoc.CreateElement("Compile");
-            group.AppendChild(elt);
-            XmlAttribute attr = toDoc.CreateAttribute(IncludeAttribute);
-            attr.Value = Path.Combine(proj.RelativePath, "**", "*.cs");
-            elt.Attributes!.Append(attr);
-            XmlNode link = toDoc.CreateElement("Link");
-            elt.AppendChild(link);
-            link.InnerText = "%(RecursiveDir)%(Filename)%(Extension)";
-
-            elt = toDoc.CreateElement("Compile");
-            group.AppendChild(elt);
-            attr = toDoc.CreateAttribute(RemoveAttribute);
-            attr.Value = Path.Combine(proj.RelativePath, "bin", "**", "*.cs");
-            elt.Attributes!.Append(attr);
-
-            elt = toDoc.CreateElement("Compile");
-            group.AppendChild(elt);
-            attr = toDoc.CreateAttribute(RemoveAttribute);
-            attr.Value = Path.Combine(proj.RelativePath, "obj", "**", "*.cs");
-            elt.Attributes!.Append(attr);
+            AddRecursiveReferences(proj, to, toDoc, "Compile", "cs");
+            AddRecursiveReferences(proj, to, toDoc, "Page", "xaml");
         }
 
         foreach (XmlNode child in from.ChildNodes)
@@ -307,6 +287,33 @@ public static class SlnMerger
                     to.InnerText = from.InnerText;
                     break;
             }
+    }
+
+    private static void AddRecursiveReferences(WriteProjectConfiguration proj, XmlNode to, XmlDocument toDoc, string elementName, string fileExt)
+    {
+        fileExt = fileExt.Trim('.');
+        XmlElement group = toDoc.CreateElement("ItemGroup");
+        to.AppendChild(group);
+        XmlNode elt = toDoc.CreateElement(elementName);
+        group.AppendChild(elt);
+        XmlAttribute attr = toDoc.CreateAttribute(IncludeAttribute);
+        attr.Value = Path.Combine(proj.RelativePath, "**", $"*.{fileExt}");
+        elt.Attributes!.Append(attr);
+        XmlNode link = toDoc.CreateElement("Link");
+        elt.AppendChild(link);
+        link.InnerText = "%(RecursiveDir)%(Filename)%(Extension)";
+
+        elt = toDoc.CreateElement(elementName);
+        group.AppendChild(elt);
+        attr = toDoc.CreateAttribute(RemoveAttribute);
+        attr.Value = Path.Combine(proj.RelativePath, "bin", "**", $"*.{fileExt}");
+        elt.Attributes!.Append(attr);
+
+        elt = toDoc.CreateElement(elementName);
+        group.AppendChild(elt);
+        attr = toDoc.CreateAttribute(RemoveAttribute);
+        attr.Value = Path.Combine(proj.RelativePath, "obj", "**", $"*.{fileExt}");
+        elt.Attributes!.Append(attr);
     }
 
     private static void AddLinkIfEmbeddedRessource(XmlElement element, XmlDocument toDoc, XmlNode copy)
