@@ -29,7 +29,7 @@ public static class SlnParser
                 foreach (KeyValuePair<string, Action<SolutionConfiguration, string>> kvp in HeaderLinesPrefix)
                     if (line.StartsWith(kvp.Key))
                     {
-                        kvp.Value(result, line[kvp.Key.Length..]);
+                        kvp.Value(result, line[kvp.Key.Length..].Trim());
                         maxHeaderLine = i;
                         set = true;
                         break;
@@ -57,13 +57,18 @@ public static class SlnParser
                         currentProject = new()
                         {
                             FilePath = parts[2].Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)
-                            , AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2])
+                            ,
+                            AbsoluteFilePath = Path.Combine(result.SlnDirectory, parts[2])
                                 .Replace('/', Path.DirectorySeparatorChar)
                                 .Replace('\\', Path.DirectorySeparatorChar)
-                            , Name = parts[1]
-                            , OriginalName = parts[1]
-                            , ProjectGuid = parts[3]
-                            , ProjectTypeGuid = parts[0]
+                            ,
+                            Name = parts[1]
+                            ,
+                            OriginalName = parts[1]
+                            ,
+                            ProjectGuid = parts[3]
+                            ,
+                            ProjectTypeGuid = parts[0]
                         };
                         currentProject.AbsoluteOriginalDirectory =
                             Path.GetDirectoryName(currentProject.AbsoluteFilePath)
@@ -85,11 +90,14 @@ public static class SlnParser
                             throw new Exception("Should not happen");
                         currentSection = new()
                         {
-                            IsPreSolution = parts[1]switch
+                            IsPreSolution = parts[1] switch
                             {
-                                "preSolution" => true, "postSolution" => false, _ => throw new Exception("Should not happen")
+                                "preSolution" => true,
+                                "postSolution" => false,
+                                _ => throw new Exception("Should not happen")
                             }
-                            , Name = parts[0]
+                            ,
+                            Name = parts[0]
                         };
                         result.Sections.Add(currentSection);
                         break;

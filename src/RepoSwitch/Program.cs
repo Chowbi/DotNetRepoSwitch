@@ -15,20 +15,18 @@ public class Program
             throw new Exception($"Configuration file has not been found: {searched}.");
 
         string content = File.ReadAllText(searched);
-        MergeConfiguration? mergeConf = System.Text.Json.JsonSerializer.Deserialize<MergeConfiguration>(content);
+        MergeConfiguration mergeConf = System.Text.Json.JsonSerializer.Deserialize<MergeConfiguration>(content) ?? throw new NullReferenceException("Unable to deserialize configuration.");
 
-        if (mergeConf?.Solutions is null || mergeConf.Solutions.Count == 0)
-            throw new Exception($"Nothing to merge, populate {nameof(MergeConfiguration.Solutions)}.");
-        if (string.IsNullOrWhiteSpace(mergeConf.DestinationPath))
-            throw new Exception($"Nowhere to write, populate {nameof(MergeConfiguration.DestinationPath)}.");
+        mergeConf.Check();
+
         if (mergeConf.FileReplacements is not null && mergeConf.FileReplacements.Any(r => string.IsNullOrWhiteSpace(r.CsprojFilePath)))
             throw new Exception(
                 $"All {nameof(MergeConfiguration.FileReplacements)} must have a {nameof(FileReplacement.CsprojFilePath)} property."
                 + $"If {nameof(FileReplacement.ReplaceWithFilePath)} is set, {nameof(FileReplacement.CsprojFilePath)} will be replaced,"
                 + $"else it will be not be copied even if referenced in csproj.");
 
-        SolutionConfiguration conf = SlnMerger.Merge(mergeConf.Solutions);
+        SolutionConfiguration slnConf = SlnMerger.Merge(mergeConf.Solutions);
 
-        SlnMerger.WriteTo(mergeConf.DestinationPath, conf, mergeConf.CopySolutionFolderFiles, mergeConf.FileReplacements);
+        SlnMerger.WriteTo(slnConf, mergeConf);
     }
 }

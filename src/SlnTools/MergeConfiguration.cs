@@ -1,4 +1,5 @@
-﻿
+﻿using System.Diagnostics.CodeAnalysis;
+
 namespace SlnTools;
 
 public class MergeConfiguration
@@ -9,7 +10,18 @@ public class MergeConfiguration
 
     public bool CopySolutionFolderFiles { get; set; } = true;
 
+    public bool GenerateEditorConfig { get; set; } = true;
+
     public FileReplacements? FileReplacements { get; set; }
+
+    [MemberNotNull(nameof(Solutions), nameof(DestinationPath))]
+    public void Check()
+    {
+        if (Solutions is null || Solutions.Count == 0)
+            throw new Exception($"Nothing to merge, populate {nameof(Solutions)}.");
+        if (string.IsNullOrWhiteSpace(DestinationPath))
+            throw new Exception($"Nowhere to write, populate {nameof(DestinationPath)}.");
+    }
 }
 
 public class FileReplacement

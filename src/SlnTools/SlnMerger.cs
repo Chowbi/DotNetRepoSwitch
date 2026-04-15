@@ -44,9 +44,9 @@ public static class SlnMerger
 
         Console.Write("Cleaning packages. ");
         foreach (Project project in result.Projects)
-        foreach (PackageReference package in project.PackageReferences.ToList())
-            if (result.Projects.Any(p => p.OriginalName == package.Name))
-                project.PackageReferences.Remove(package);
+            foreach (PackageReference package in project.PackageReferences.ToList())
+                if (result.Projects.Any(p => p.OriginalName == package.Name))
+                    project.PackageReferences.Remove(package);
         Console.WriteLine("Done");
 
         return result;
@@ -59,7 +59,11 @@ public static class SlnMerger
 
         foreach (SolutionConfiguration conf in toMerge.Skip(1))
             if (result.SlnVersionStr != conf.SlnVersionStr)
-                throw new NotImplementedException();
+            {
+                Console.WriteLine($"SlnVersion {result.SlnFile}: {result.SlnVersionStr}");
+                Console.WriteLine($"SlnVersion {conf.SlnFile}: {conf.SlnVersionStr}");
+                throw new Exception($"Found different versions of sln file: {result.SlnFile}: {result.SlnVersionStr} vs {conf.SlnVersionStr} :{conf.SlnFile}");
+            }
             else
             {
                 if (result.VsMinimalVersion < conf.VsMinimalVersion)
@@ -105,9 +109,9 @@ public static class SlnMerger
                             or "ProjectConfigurationPlatforms"
                             or "NestedProjects"
                             or "MonoDevelopProperties"
-                            or "ExtensibilityGlobals" => false
-                        , "SolutionProperties" => true
-                        , _ => throw new NotImplementedException()
+                            or "ExtensibilityGlobals" => false,
+                        "SolutionProperties" => true,
+                        _ => throw new NotImplementedException()
                     };
 
                     foreach (string line in section.Lines)
@@ -173,36 +177,43 @@ public static class SlnMerger
     }
 
 
-    public static void WriteTo(
-        string destinationSlnFilePath
-        , SolutionConfiguration conf
-        , bool copySlnFolderFiles
-        , List<FileReplacement>? fileToCopySource)
+    private const string _EditorConfigTemplate
+        = """
+          
+          is_global = true
+          build_property.RootNamespace = {0}
+          build_property.ProjectDir = {1}
+
+          """;
+
+    public static void WriteTo(SolutionConfiguration slnConf, MergeConfiguration mergeConf)
     {
-        Dictionary<string, string?> fileToCopySourceDic = fileToCopySource?.ToDictionary(
+        mergeConf.Check();
+
+        Dictionary<string, string?> fileToCopySourceDic = mergeConf.FileReplacements?.ToDictionary(
                                                               c => c.CsprojFilePath ?? throw new NullReferenceException()
                                                               , c => c.ReplaceWithFilePath)
                                                           ?? new Dictionary<string, string?>();
 
 
-        if (!destinationSlnFilePath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
-            destinationSlnFilePath = Path.Combine(destinationSlnFilePath, "Merged.sln");
+        if (!mergeConf.DestinationPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            mergeConf.DestinationPath = Path.Combine(mergeConf.DestinationPath, "Merged.sln");
 
         Console.WriteLine("Writing result sln file and projects. ");
-        string toSlnDir = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException();
+        string toSlnDir = Path.GetDirectoryName(mergeConf.DestinationPath) ?? throw new NullReferenceException("No directory to sln path");
         if (!Directory.Exists(toSlnDir))
             Directory.CreateDirectory(toSlnDir);
 
 
-        SlnParser.WriteConfiguration(conf, destinationSlnFilePath);
+        SlnParser.WriteConfiguration(slnConf, mergeConf.DestinationPath);
 
-        if (copySlnFolderFiles)
+        if (mergeConf.CopySolutionFolderFiles)
         {
             Console.WriteLine("Copying solution directory files");
-            string sourceSlnName = Path.GetFileNameWithoutExtension(conf.SlnFile);
-            string newSlnName = Path.GetFileNameWithoutExtension(destinationSlnFilePath);
-            foreach (string file in Directory.EnumerateFiles(conf.SlnDirectory))
-                if (file != conf.SlnFile)
+            string sourceSlnName = Path.GetFileNameWithoutExtension(slnConf.SlnFile);
+            string newSlnName = Path.GetFileNameWithoutExtension(mergeConf.DestinationPath);
+            foreach (string file in Directory.EnumerateFiles(slnConf.SlnDirectory))
+                if (file != slnConf.SlnFile)
                 {
                     string fileName = Path.GetFileName(file).Replace(sourceSlnName, newSlnName);
                     Console.Write($"{fileName} ");
@@ -213,44 +224,46 @@ public static class SlnMerger
             Console.WriteLine();
         }
 
-        XmlWriterSettings settings = new() 
-        { 
-            Indent = true
-            , Encoding = Encoding.UTF8 
-            , OmitXmlDeclaration = false
+        XmlWriterSettings settings = new()
+        {
+            Indent = true,
+            Encoding = Encoding.UTF8,
+            OmitXmlDeclaration = false
         };
-        Console.WriteLine($"Merging projects to {destinationSlnFilePath}");
-        foreach (Project project in conf.Projects)
-            if (project.ProjectXml != null)
+        Console.WriteLine($"Merging projects to {mergeConf.DestinationPath}");
+        foreach (Project project in slnConf.Projects)
+        {
+            string toProjFile = Path.Combine(toSlnDir, project.FilePath.TrimStart('.', '\\', '/'));
+            string toProjDir = Path.GetDirectoryName(toProjFile)!;
+            if (!Directory.Exists(toProjDir))
+                Directory.CreateDirectory(toProjDir);
+
+            if (project.ProjectXml is null)
+                Console.WriteLine($"\r\n{project.Name} No project xml.");
+            else
             {
                 Console.Write(project.Name + ' ');
-
-                StringComparer comparer = Environment.OSVersion.Platform.ToString().StartsWith("Win")
-                    ? StringComparer.OrdinalIgnoreCase
-                    : StringComparer.Ordinal;
-
-                string toProjFile = Path.Combine(toSlnDir, project.FilePath.TrimStart('.', '\\', '/'));
-                string toProjDir = Path.GetDirectoryName(toProjFile)!;
-                if (!Directory.Exists(toProjDir))
-                    Directory.CreateDirectory(toProjDir);
-
                 WriteProjectConfiguration proj = new()
                 {
-                    Project = project
-                    , ReplaceDic = fileToCopySourceDic
-                    , Destination = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException("No directory to sln path")
-                    , RelativePath = Path.GetRelativePath(toProjDir, project.AbsoluteOriginalDirectory)
+                    Project = project,
+                    ReplaceDic = fileToCopySourceDic,
+                    Destination = toSlnDir,
+                    RelativePath = Path.GetRelativePath(toProjDir, project.AbsoluteOriginalDirectory)
                 };
 
                 XmlDocument newProj = new();
                 CopyProject(proj, project.ProjectXml, newProj);
 
-                using MemoryStream ms = new ();
+                using MemoryStream ms = new();
                 using XmlWriter xmlWriter = XmlWriter.Create(ms, settings);
                 newProj.WriteTo(xmlWriter);
                 xmlWriter.Flush();
                 File.WriteAllBytes(toProjFile, ms.ToArray());
             }
+
+            if (mergeConf.GenerateEditorConfig)
+                File.WriteAllText(Path.Combine(toProjDir, ".editorconfig"), string.Format(_EditorConfigTemplate, project.Name, project.AbsoluteFilePath));
+        }
 
         Console.WriteLine();
         Console.WriteLine("Done");
